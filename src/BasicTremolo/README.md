@@ -24,5 +24,5 @@ The square wave is a little "clicky" in this example, even using WAVE_POLYBLEP_S
 | SWITCH 1 | WAVEFORM | **UP** - Band-limited TRIANGLE<br/>**MIDDLE** - SINE<br/>**DOWN** - Band-limited SQUARE |
 | SWITCH 2 | Unused |  |
 | SWITCH 3 | Unused |  |
-| FOOTSWITCH 1 | Reset | If held down for 2 seconds, the Daisy Seed will reset to "flashable mode" (DFU) |
+| FOOTSWITCH 1 | DFU Reset | Hold *both* footswitches for 2 s to enter DFU (flashable) mode |
 | FOOTSWITCH 2 | Bypass | The bypassed signal is buffered |

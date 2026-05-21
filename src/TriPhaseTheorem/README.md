@@ -39,7 +39,7 @@ The dramatic differences in character between the pedals come from:
 | SWITCH 2 DOWN | Small Stone **COLOR off** (only active when Small Stone is selected) |
 | SWITCH 2 MIDDLE or UP | Small Stone **COLOR on** |
 | SWITCH 3 | *(unused)* |
-| FOOTSWITCH 1 | *(reserved for DFU mode; hold 2 s to enter bootloader)* |
+| FOOTSWITCH 1 | *(reserved for DFU mode; hold both footswitches for 2 s to enter bootloader)* |
 | FOOTSWITCH 2 | **Bypass** toggle |
 | LED 1 | Lit when Small Stone is the active model |
 | LED 2 | Lit when effect is active (not bypassed) |

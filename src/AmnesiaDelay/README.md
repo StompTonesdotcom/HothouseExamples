@@ -14,6 +14,7 @@ A BBD-style delay loosely modeled on the Electro-Harmonix Deluxe Memory Man. Thi
 | KNOB 4        | **DEPTH** -- modulation depth applied to the delay-time read tap.                          |
 | KNOB 5        | **RATE** -- modulation rate. CCW = chorus (slow); CW = vibrato (fast).                     |
 | KNOB 6        | **CLOCK NOISE** -- BBD clock leakage and bias-drift hiss. CCW = clean; CW = wonky DMM.     |
+| FOOTSWITCH 1  | *(unused)* Hold *both* footswitches for 2 s to enter DFU (flashable) mode.                |
 | FOOTSWITCH 2  | Engage / bypass.                                                                          |
 
 ## Some recommended settings

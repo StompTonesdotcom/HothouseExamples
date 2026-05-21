@@ -31,7 +31,7 @@ circuit. SWITCH 3 and KNOB 3 let you tune how much of that asymmetry you hear.
 | SWITCH 1 | MODE - UP: Chorus (dry+wet mix), DOWN: Vibrato (wet signal only, pure pitch mod) |
 | SWITCH 2 | FEEDBACK - UP/MIDDLE: Feedback active (KNOB 6 controls depth), DOWN: Feedback off |
 | SWITCH 3 | LDR MODEL - UP: Modern (subtle asymmetry, 3:1 ratio), MIDDLE: Vintage Shin-ei (classic wobble, 6:1), DOWN: Sluggish (exaggerated, 12:1) |
-| FOOTSWITCH 1 | (Hold 2 seconds to enter DFU/bootloader mode) |
+| FOOTSWITCH 1 | (Hold *both* footswitches for 2 s to enter DFU/bootloader mode) |
 | FOOTSWITCH 2 | Bypass toggle |
 | LED 1 | Lit when Vibrato mode is selected |
 | LED 2 | Lit when effect is active (not bypassed) |

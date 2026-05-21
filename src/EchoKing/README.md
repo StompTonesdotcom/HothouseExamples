@@ -30,6 +30,7 @@ any other trademark holder. It is an educational DSP example.
 | TOGGLESWITCH 1 | **MODEL**: UP = EP-3 (solid state), MIDDLE = EP-2 (tube, classic), DOWN = EP-1 (tube, vintage) |
 | TOGGLESWITCH 2 | **ECHO RANGE**: UP = short (50-400 ms), MIDDLE = medium (100-600 ms), DOWN = long (200-800 ms) |
 | TOGGLESWITCH 3 | **MODE**: UP = SOS (sound-on-sound), MIDDLE = normal echo, DOWN = preamp only             |
+| FOOTSWITCH 1   | *(unused)* Hold *both* footswitches for 2 s to enter DFU (flashable) mode.                 |
 | FOOTSWITCH 2   | Engage / bypass.                                                                           |
 | LED 1          | Lit when SOS or Preamp-Only mode is active.                                                |
 | LED 2          | Lit when effect is engaged.                                                                |

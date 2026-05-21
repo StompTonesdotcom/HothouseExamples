@@ -28,9 +28,8 @@ using daisy::SaiHandle;
 using daisy::System;
 using daisysp::DelayLine;
 using daisysp::fonepole;
-using daisysp::OnePole;
 using daisysp::Limiter;
-using daisysp::fonepole;
+using daisysp::OnePole;
 using daisysp::Oscillator;
 
 #define MAX_DELAY static_cast<size_t>(48000 * 23.0f)
@@ -40,7 +39,7 @@ Hothouse hw;
 DelayLine<float, MAX_DELAY> DSY_SDRAM_BSS DELAY_LINES[N_DELAYS];
 
 struct delay_s {
-  DelayLine<float, MAX_DELAY> *del;
+  DelayLine<float, MAX_DELAY>* del;
   float currentDelay;
   float feedback;
   // store the last value of the delay line for the cross-feedback.
@@ -50,15 +49,15 @@ struct delay_s {
   OnePole *fb_lpf, *fb_hpf;
 
   // LFO for delay time modulation
-  Oscillator *lfo;
+  Oscillator* lfo;
 
   float Process(float in) {
     del->SetDelay(currentDelay + (lfo->Process() * 48));
     float read = del->Read();
-    
+
     // apply the filters
     read = fb_lpf->Process(fb_hpf->Process(read));
-    
+
     // write back with softclip
     del->Write(daisysp::SoftClip((feedback * read) + in));
     lastVal = read;
@@ -66,16 +65,15 @@ struct delay_s {
   }
 };
 
-
 // LEDs
 Led led_record;
 Led led_erase;
 
 bool RECORDING = false;
-bool ERASING   = false;
+bool ERASING = false;
 
 float CROSS_FEEDBACK = 0.0f;
-float FEEDBACK       = 0.0f;
+float FEEDBACK = 0.0f;
 
 delay_s DELAYS[N_DELAYS];
 OnePole FB_LPFS[N_DELAYS];
@@ -83,7 +81,7 @@ OnePole FB_HPFS[N_DELAYS];
 Oscillator LFOS[N_DELAYS];
 
 void InitDelays(float samplerate) {
-  for (int i = 0 ; i < N_DELAYS ; i++) {
+  for (int i = 0; i < N_DELAYS; i++) {
     DELAY_LINES[i].Init();
     DELAYS[i].del = &DELAY_LINES[i];
     DELAYS[i].currentDelay = samplerate * 1.0f;
@@ -97,13 +95,13 @@ void InitDelays(float samplerate) {
     FB_LPFS[i].Init();
     FB_LPFS[i].SetFilterMode(OnePole::FILTER_MODE_LOW_PASS);
     FB_LPFS[i].SetFrequency(8000.0f / samplerate);
-    
+
     // HPF filter at 80hz to make sure the resulting audio mash doesnt
     // get super muddy in the sub frequencies.
     FB_HPFS[i].Init();
     FB_HPFS[i].SetFilterMode(OnePole::FILTER_MODE_HIGH_PASS);
     FB_HPFS[i].SetFrequency(80.0f / samplerate);
-    
+
     DELAYS[i].fb_lpf = &FB_LPFS[i];
     DELAYS[i].fb_hpf = &FB_HPFS[i];
 
@@ -119,20 +117,19 @@ float INPUT_SCALE = 0;
 float CURRENT_INPUT_SCALE = 0;
 float DELAY_TIME_KNOB = 0;
 
-void AudioCallback(AudioHandle::InputBuffer in,
-                   AudioHandle::OutputBuffer out,
+void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out,
                    size_t size) {
   hw.ProcessAllControls();
 
   RECORDING = hw.switches[Hothouse::FOOTSWITCH_1].Pressed();
-  ERASING   = hw.switches[Hothouse::FOOTSWITCH_2].Pressed();
+  ERASING = hw.switches[Hothouse::FOOTSWITCH_2].Pressed();
 
   INPUT_SCALE = RECORDING ? 1.0f : 0.0f;
 
   // feedback and crossfeedback are ez-here.
-  CROSS_FEEDBACK  = hw.knobs[0].Process();
+  CROSS_FEEDBACK = hw.knobs[0].Process();
   DELAY_TIME_KNOB = hw.knobs[1].Process();
-  FEEDBACK        = hw.knobs[2].Process();
+  FEEDBACK = hw.knobs[2].Process();
 
   // fade in the input.
   fonepole(CURRENT_INPUT_SCALE, INPUT_SCALE, 0.02f);
@@ -141,20 +138,21 @@ void AudioCallback(AudioHandle::InputBuffer in,
   // feedbacks to 0
   if (ERASING) {
     CROSS_FEEDBACK = 0;
-    FEEDBACK       = 0;
+    FEEDBACK = 0;
   }
 
   DELAYS[0].feedback = DELAYS[1].feedback = FEEDBACK;
-  
+
   for (size_t i = 0; i < size; ++i) {
     // update delays
     float mix = 0;
 
     // input scale is used here to fade in input to the delay lines
     float in_samp = in[0][i] * CURRENT_INPUT_SCALE;
-    
+
     // manually unrolled the mixing loop
-    float sig = DELAYS[0].Process(in_samp + (CROSS_FEEDBACK * DELAYS[1].lastVal));
+    float sig =
+        DELAYS[0].Process(in_samp + (CROSS_FEEDBACK * DELAYS[1].lastVal));
     mix += sig;
     sig = DELAYS[1].Process(in_samp + (CROSS_FEEDBACK * DELAYS[0].lastVal));
     mix += sig;
@@ -176,7 +174,7 @@ int main() {
   hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 
   InitDelays(hw.AudioSampleRate());
-  
+
   led_record.Init(hw.seed.GetPin(Hothouse::LED_1), false);
   led_erase.Init(hw.seed.GetPin(Hothouse::LED_2), false);
 
@@ -186,10 +184,10 @@ int main() {
   while (true) {
     hw.DelayMs(10);
 
-    led_record.Set( RECORDING ? 1.0f : 0.0f);
+    led_record.Set(RECORDING ? 1.0f : 0.0f);
     led_record.Update();
 
-    led_erase.Set( ERASING ? 1.0f : 0.0f);
+    led_erase.Set(ERASING ? 1.0f : 0.0f);
     led_erase.Update();
 
     // set the delay times here based on the knob value captured in
@@ -202,12 +200,15 @@ int main() {
       DELAYS[1].currentDelay = 3.0f * hw.AudioSampleRate();
     } else if (DELAY_TIME_KNOB < 0.75f) {
       DELAYS[0].currentDelay = 17.0f * hw.AudioSampleRate();
-      DELAYS[1].currentDelay = 11.0f * hw.AudioSampleRate();      
+      DELAYS[1].currentDelay = 11.0f * hw.AudioSampleRate();
     } else {
       DELAYS[0].currentDelay = 23.0f * hw.AudioSampleRate();
-      DELAYS[1].currentDelay = 17.0f * hw.AudioSampleRate();      
+      DELAYS[1].currentDelay = 17.0f * hw.AudioSampleRate();
     }
+
+    // Hold *BOTH* footswitches for 2 s to reset to bootloader
+    hw.CheckResetToBootloader();
   }
-  
+
   return 0;
 }

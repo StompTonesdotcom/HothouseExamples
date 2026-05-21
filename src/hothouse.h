@@ -175,11 +175,11 @@ class Hothouse {
   */
   ToggleswitchPosition GetToggleswitchPosition(Toggleswitch tsw);
 
-  /** Check whether FOOTSWITCH_1 (the left foot switch) has been held down for 2
-   * seconds and, if it has, call System::ResetToBootloader(). This has the same
-   * effect as pressing the Daisy Seed RESET and BOOT buttons to get into
-   * flashable (DFU)) mode. \note The LEDs will alternately flash three times
-   * before the reset. */
+  /** Check whether FOOTSWITCH_1 and FOOTSWITCH_2 have both been held down
+   * simultaneously for 2 seconds and, if so, call System::ResetToBootloader().
+   * This has the same effect as pressing the Daisy Seed RESET and BOOT buttons
+   * to get into flashable (DFU) mode. \note The LEDs will alternately flash
+   * three times before the reset. */
   void CheckResetToBootloader();
 
   /** Register/Deregister footswitch press callbacks. This provides an
@@ -202,12 +202,13 @@ class Hothouse {
   ToggleswitchPosition GetLogicalSwitchPosition(Switch up, Switch down);
   void ProcessFootswitchPresses(Switches footswitch);
 
-  uint32_t footswitch_start_time[2] = {0, 0};  // Store footswitch start time
+  uint32_t footswitch_start_time[2] = {0, 0};
   uint32_t footswitch_last_press_time[2] = {0, 0};
   bool footswitch_last_state[2] = {false, false};
   uint8_t footswitch_press_count[2] = {0, 0};
   bool footswitch_long_press_triggered[2] = {false, false};
-  static const uint32_t HOLD_THRESHOLD_MS = 2000;  // 2 second hold time
+  uint32_t dfu_start_time_ = 0;
+  static const uint32_t HOLD_THRESHOLD_MS = 2000;
   static const uint32_t DOUBLE_PRESS_THRESHOLD_MS = 600;
 
   inline uint16_t* adc_ptr(const uint8_t chn) { return seed.adc.GetPtr(chn); }

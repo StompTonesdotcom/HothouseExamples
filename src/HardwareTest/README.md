@@ -22,5 +22,7 @@ Tests the Hothouse hardware by exercising the audio I/O and all knobs, switches,
 | SWITCH 1 | OSCILLATOR 1 WAVEFORM | **UP** - WAVE_POLYBLEP_SQUARE<br/>**MIDDLE** - WAVE_POLYBLEP_TRI<br/>**DOWN** - WAVE_POLYBLEP_SAW |
 | SWITCH 2 | OSCILLATOR 2 WAVEFORM | **UP** - WAVE_POLYBLEP_SQUARE<br/>**MIDDLE** - WAVE_POLYBLEP_TRI<br/>**DOWN** - WAVE_POLYBLEP_SAW |
 | SWITCH 3 | OSCILLATOR 3 WAVEFORM | **UP** - WAVE_POLYBLEP_SQUARE<br/>**MIDDLE** - WAVE_POLYBLEP_TRI<br/>**DOWN** - WAVE_POLYBLEP_SAW |
-| FOOTSWITCH 1 | LED 1 | Toggles LED 1 off and on; holding down for 2 seconds puts the Daisy Seed in "flashable mode" |
+| FOOTSWITCH 1 | LED 1 | Toggles LED 1 off and on |
 | FOOTSWITCH 2 | LED 2 | Toggles LED 2 off and on |
+
+> Hold both footswitches for 2 s to enter DFU (flashable) mode.

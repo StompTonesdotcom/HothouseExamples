@@ -21,7 +21,7 @@ The SEASICK tremolo mode is a panned stereo version of the HARMONIC mode. In SEA
 | SWITCH 1 | Reverb low-pass cutoff FREQ | **UP** - 10kHz<br/>**MIDDLE** - 5kHz<br/>**DOWN** - 2500Hz |
 | SWITCH 2 | Tremolo WAVEFORM | **UP** - TRI<br/>**MIDDLE** - SIN<br/>**DOWN** - SQUARE (sorta rounded) |
 | SWITCH 3 | Tremolo MODE | **UP** - HARMONIC <br/>**MIDDLE** - NORMAL <br/>**DOWN** - SEASICK (panned harmonic) |
-| FOOTSWITCH 1 | Reverb BYPASS |  |
+| FOOTSWITCH 1 | Reverb BYPASS | Hold *both* footswitches for 2 s to enter DFU (flashable) mode |
 | FOOTSWITCH 2 | Tremolo BYPASS |  |
 
 ## Implementation notes

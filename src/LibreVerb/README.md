@@ -29,7 +29,7 @@ The mono dry signal is split into two banks of combs with slightly different del
 | SWITCH 1 | WIDTH | **UP** - Mono (both reverb tails folded to one channel, mono-compatible) <br/>**MIDDLE** - Stereo (the regular stereo tail) <br/>**DOWN** - Wide (mid/side widened, bigger stereo image). |
 | SWITCH 2 | SIZE | **UP** - Plate (tight, bright, short tail) <br/>**MIDDLE** - Hall (_almost_ stock Freeverb) <br/>**DOWN** - Cathedral (bigger, slower, sparser). Glides between modes when flicked. |
 | SWITCH 3 | MOD SPEED | **UP** - Slow (0.15 Hz, classic Lexicon) <br/>**MIDDLE** - Moderate (0.5 Hz, Blue Sky territory) <br/>**DOWN** - Fast (1.6 Hz, warbly). |
-| FOOTSWITCH 1 | (unused) | Hold for 2s to enter DFU mode. |
+| FOOTSWITCH 1 | (unused) | Hold *both* footswitches for 2 s to enter DFU mode. |
 | FOOTSWITCH 2 | Bypass | The bypassed signal is buffered. LED 2 lit when the effect is engaged. |
 
 ### Tips and suggested settings combinations

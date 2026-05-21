@@ -18,7 +18,7 @@ Obsolete but left for reference.
 >
 >  while (true) {
 >    hw.DelayMs(10);
->    hw.CheckResetToBootloader(); // If left footswitch is held down for 2 seconds, reset the Daisy Seed
+>    hw.CheckResetToBootloader(); // Hold both footswitches for 2 s to reset the Daisy Seed
 >  }
 >  return 0;
 > }
@@ -26,7 +26,7 @@ Obsolete but left for reference.
 
 A very short example to demonstrate a simple (quick and dirty?) approach to programmatically putting the Daisy Seed into "flashable mode" so it can be flashed with `dfu-util` over USB. The result is the same as pressing the BOOT and RESET buttons on the Daisy Seed as described [here](https://github.com/electro-smith/DaisyWiki/wiki/1.-Setting-Up-Your-Development-Environment#4a-flashing-the-daisy-via-usb).
 
-In this code, holding down `FOOTSWITCH_1` for one second will briefly flash `LED_1` three times and reset the Daisy Seed by calling `System::ResetToBootloader()`. This can be handy while doing development work, as there's no need to physically press the Daisy Seed buttons; you can quickly prepare to flash by holding down the left footswitch.
+In this code, holding down both footswitches for two seconds will briefly flash `LED_1` three times and reset the Daisy Seed by calling `System::ResetToBootloader()`. This can be handy while doing development work, as there's no need to physically press the Daisy Seed buttons; you can quickly prepare to flash by holding both footswitches down.
 
 > [!TIP]
 > Think carefully about leaving such code enabled in your final program; it could be too easy to mistakenly reset the Hothouse (for example, in a live performance situation!), requiring you to power cycle to recover. Consider the use of a compile-time flag (something like `#ifdef DEVELOPMENT`), or a runtime flag (like `enable_bootloader_reset = true;`) to disable this functionality for "production" builds.
@@ -46,5 +46,5 @@ In this code, holding down `FOOTSWITCH_1` for one second will briefly flash `LED
 | SWITCH 1 | Unused |  |
 | SWITCH 2 | Unused |  |
 | SWITCH 3 | Unused |  |
-| FOOTSWITCH 1 | Reset | Holding down for one second will flash LED_1 three times and put the Daisy Seed in "flashable mode" |
+| FOOTSWITCH 1 | Reset | Hold *both* footswitches for 2 s to flash LED_1 three times and put the Daisy Seed in "flashable mode" |
 | FOOTSWITCH 2 | Bypass | When NOT bypassed, zeroes are sent to the left output; when bypassed, output is the same as the input |

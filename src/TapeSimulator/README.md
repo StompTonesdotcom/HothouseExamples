@@ -27,5 +27,5 @@ The effect includes:
 | SWITCH 1 | Unused | **UP** - <br/>**MIDDLE** - <br/>**DOWN** -  |
 | SWITCH 2 | Unused | **UP** - <br/>**MIDDLE** - <br/>**DOWN** -  |
 | SWITCH 3 | Unused | **UP** - <br/>**MIDDLE** - <br/>**DOWN** -  |
-| FOOTSWITCH 1 | Unused |  |
+| FOOTSWITCH 1 | (unused) | Hold *both* footswitches for 2 s to enter DFU (flashable) mode |
 | FOOTSWITCH 2 | Bypass | The bypassed signal is buffered |

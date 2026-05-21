@@ -179,14 +179,14 @@ Hothouse::ToggleswitchPosition Hothouse::GetToggleswitchPosition(
 }
 
 void Hothouse::CheckResetToBootloader() {
-  if (switches[Hothouse::FOOTSWITCH_1].Pressed()) {
-    if (footswitch_start_time[0] == 0) {
-      footswitch_start_time [0]= System::GetNow();
-    } else if (System::GetNow() - footswitch_start_time[0] >= HOLD_THRESHOLD_MS) {
+  if (switches[FOOTSWITCH_1].Pressed() && switches[FOOTSWITCH_2].Pressed()) {
+    if (dfu_start_time_ == 0) {
+      dfu_start_time_ = System::GetNow();
+    } else if (System::GetNow() - dfu_start_time_ >= HOLD_THRESHOLD_MS) {
       // Shut 'er down so the LEDs always flash
       StopAdc();
       StopAudio();
-      
+
       daisy::Led _led_1, _led_2;
       _led_1.Init(seed.GetPin(22), false);
       _led_2.Init(seed.GetPin(23), false);
@@ -206,12 +206,11 @@ void Hothouse::CheckResetToBootloader() {
         System::Delay(100);
       }
 
-      // Reset system to bootloader after LED flashing
       System::ResetToBootloader();
     }
   } else {
-    // Reset the hold timer if the footswitch is released
-    footswitch_start_time[0] = 0;
+    // Reset the hold timer if either footswitch is released
+    dfu_start_time_ = 0;
   }
 }
 
@@ -253,11 +252,12 @@ void Hothouse::ProcessFootswitchPresses(Switches footswitch) {
   uint32_t press_duration = now - footswitch_start_time[footswitch_index];
 
   if (switches[footswitch].Pressed() && press_duration >= HOLD_THRESHOLD_MS && !footswitch_long_press_triggered[footswitch_index]) {
-    // Footswitch is being held down
-    if (footswitchCallbacks->HandleLongPress != NULL) {
+    // Both footswitches held = DFU gesture; don't fire a long-press callback
+    bool dfu_gesture = switches[FOOTSWITCH_1].Pressed() && switches[FOOTSWITCH_2].Pressed();
+    if (!dfu_gesture && footswitchCallbacks->HandleLongPress != NULL) {
       footswitchCallbacks->HandleLongPress(footswitch);
     }
-    footswitch_long_press_triggered[footswitch_index] = true; // Ensure long press is only triggered once
+    footswitch_long_press_triggered[footswitch_index] = true;
   }
 
   if (is_pressed == false && footswitch_last_state[footswitch_index] == true) {

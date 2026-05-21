@@ -19,7 +19,7 @@ Super basic monophonic synthesizer example with multiple waveforms, Moog-style f
 | SWITCH 1 | Unused | **UP** - SIN<br/>**MIDDLE** - POLYBLEP_SQUARE<br/>**DOWN** - POLYBLEP_SAW :metal: |
 | SWITCH 2 | Unused |  |
 | SWITCH 3 | Unused |  |
-| FOOTSWITCH 1 | RESET | Hold down for 2 seconds to put the Daisy Seed in "flashable mode" |
+| FOOTSWITCH 1 | DFU RESET | Hold *both* footswitches for 2 s to put the Daisy Seed in "flashable mode" |
 | FOOTSWITCH 2 | Unused |  |
 
 ### USB Host
