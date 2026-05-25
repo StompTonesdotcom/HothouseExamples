@@ -363,7 +363,7 @@ int main() {
     led_bypass.Set(bypass ? 0.0f : 1.0f);
     led_bypass.Update();
 
-    // Hold FOOTSWITCH 1 for 2 seconds to enter DFU/flashing mode.
+    // Hold *BOTH* footswitches for 2 s to reset to bootloader.
     hw.CheckResetToBootloader();
   }
   return 0;

@@ -766,7 +766,7 @@ int main() {
     }
     hw.DelayMs(10);
 
-    // Call System::ResetToBootloader() if FOOTSWITCH_1 is pressed for 2 seconds
+    // Hold *BOTH* footswitches for 2 s to reset to bootloader.
     if (pedal_mode == PEDAL_MODE_NORMAL) {
       hw.CheckResetToBootloader();
     }

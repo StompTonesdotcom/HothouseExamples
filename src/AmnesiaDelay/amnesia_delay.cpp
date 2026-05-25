@@ -337,7 +337,7 @@ int main() {
     led_bypass.Update();
     System::Delay(10);
 
-    // Standard Hothouse idiom: hold left footswitch 2s for DFU mode.
+    // Hold *BOTH* footswitches for 2 s to reset to bootloader.
     hw.CheckResetToBootloader();
   }
   return 0;
