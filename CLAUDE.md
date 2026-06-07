@@ -1,0 +1,100 @@
+# Hothouse DIY Pedal — Claude Context
+
+This repo is HothouseExamples cloned from https://github.com/clevelandmusicco/HothouseExamples.
+The goal is to build and flash custom DSP effects for the Cleveland Music Co. Hothouse pedal (Daisy Seed based).
+
+## Hardware
+
+**Hothouse controls (from `src/hothouse.h`):**
+- 6 knobs: `KNOB_1` through `KNOB_6` — read via `hw.GetKnobValue(Hothouse::KNOB_1)` or `hw.knobs[0].Process()` (returns 0.0–1.0)
+- 3 toggle switches: `TOGGLESWITCH_1/2/3` — read via `hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_1)` returns `TOGGLESWITCH_UP`, `TOGGLESWITCH_MIDDLE`, or `TOGGLESWITCH_DOWN`
+- 2 footswitches: `FOOTSWITCH_1` (left), `FOOTSWITCH_2` (right) — read via `hw.switches[6]` / `hw.switches[7]`, or use `RegisterFootswitchCallbacks()` for single/double/long press handling
+- 2 LEDs: `LED_1` (pin 22), `LED_2` (pin 23) — initialized with `led.Init(hw.seed.GetPin(23), false)`
+- Audio: stereo in/out, 48kHz sample rate, 4-sample block size is typical
+
+**DFU mode (to flash):**
+- First time: hold BOOT button on Daisy Seed + press RESET
+- After first flash: hold both footswitches simultaneously for 2 seconds (LEDs flash 3x then reset) — this is the `CheckResetToBootloader()` call in the main loop
+
+## Dev Environment (macOS arm64)
+
+**ARM toolchain:** `~/arm-gnu-toolchain/bin/arm-none-eabi-gcc` (v15.2, downloaded directly from ARM — no Homebrew needed)
+- Added to PATH in `~/.zshrc`: `export PATH="$HOME/arm-gnu-toolchain/bin:$PATH"`
+- Open a fresh terminal after setup and `arm-none-eabi-gcc --version` should work
+
+**dfu-util:** `/opt/homebrew/bin/dfu-util` (v0.11, installed via Homebrew)
+- Homebrew at `/opt/homebrew/` (Apple Silicon), PATH set via `~/.zprofile`
+
+**Libraries:** `libDaisy` and `DaisySP` are git submodules — already built. If you need to rebuild:
+```bash
+make -C libDaisy
+make -C DaisySP
+```
+
+## Build & Flash Workflow
+
+```bash
+# Build an example
+cd src/BasicTremolo
+make clean && make
+
+# Flash via USB DFU
+make program-dfu
+```
+
+The `make program-dfu` error `dfu-util: Error during download get_status` is a **known false positive** — it just means the Daisy rebooted into the new firmware before dfu-util could get a final status. If you see "File downloaded successfully" before it, the flash worked.
+
+## Code Pattern (every effect follows this structure)
+
+```cpp
+#include "daisysp.h"
+#include "hothouse.h"
+using clevelandmusicco::Hothouse;
+
+Hothouse hw;
+
+void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, size_t size) {
+    hw.ProcessAllControls();
+
+    // read knobs, switches, footswitches here
+    float knob1 = hw.GetKnobValue(Hothouse::KNOB_1); // 0.0 - 1.0
+
+    for (size_t i = 0; i < size; i++) {
+        out[0][i] = out[1][i] = /* processed audio */;
+    }
+}
+
+int main() {
+    hw.Init();
+    hw.SetAudioBlockSize(4);
+    hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
+    float sample_rate = hw.AudioSampleRate();
+
+    // init DSP objects with sample_rate here
+
+    hw.StartAdc();
+    hw.StartAudio(AudioCallback);
+
+    while (true) {
+        hw.DelayMs(6);
+        // update LEDs here
+        hw.CheckResetToBootloader(); // always include this
+    }
+}
+```
+
+To create a new effect, copy an existing example dir and modify. The `Makefile` in each example is nearly identical — just change the target name.
+
+## Gotchas & Hard-Won Lessons
+
+- **Charge-only micro-USB cables will not work for flashing.** The Daisy won't appear in `dfu-util -l` or even in the macOS USB device list. Use a known data cable (e.g. Xbox controller cable works).
+- **The DFU flash "error" is not an error.** `dfu-util: Error during download get_status` at the end of a successful flash is expected — ignore it, check for "File downloaded successfully" instead.
+- **Togglswitches:** If a switch is ON-ON (not ON-OFF-ON), `TOGGLESWITCH_MIDDLE` can never be returned. Write code defensively around this.
+- **BasicTremolo uses FOOTSWITCH_2 (right), not FOOTSWITCH_1 (left).** `hw.switches[7]` = right footswitch, `hw.seed.GetPin(23)` = right LED. Left footswitch does nothing in that example. This is a quirk of that demo — not a hardware issue.
+- **`hw.knobs[n].Process()` vs `hw.GetKnobValue()`:** Both return 0.0–1.0. `Process()` called directly on the AnalogControl object. `GetKnobValue()` is the cleaner API — prefer it in new code.
+- **`hw.ProcessAllControls()`** must be called at the top of the audio callback every time, not just once. It reads ADC + debounces switches.
+- **`CheckResetToBootloader()`** must be in the main loop (not the audio callback). Omitting it means you can't enter DFU mode via footswitches and must open the pedal.
+
+## Custom Projects
+
+_This section will grow as custom effects are built. Add notes here about design decisions, bugs found, and non-obvious behaviors._
