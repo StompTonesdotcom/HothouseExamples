@@ -67,40 +67,25 @@ public:
         auto& s = ch[channel & 1];
         float x = in;
 
-        // C1 + Q1 booster (q1Drive = 1.0 at max sustain)
+        // Input DC block
         x = highPass(x, s.hI_x, s.hI_y, hpInA);
-        x = railSat(kQ1LoadedGain * x, kVrail1);
-        x = lowPass(x, s.l1, lp1C);
 
-        // C3 + Q2 clipped stage (sustain-controlled; fixed at max)
-        x = highPass(x, s.h12_x, s.h12_y, hpS12A);
-        x = railSat(q2Gain * x, kVrail2);
-        x = lowPass(x, s.l2, lp2C);
-        x = diodeLoadedCollector(x, q2DiodeStrength);
+        // Stage 1: soft pre-drive
+        // 24× gain ensures full saturation even with low-level ER2 reverb input
+        x = fastTanh(x * 24.0f);
 
-        // C7 + Q3 clipped stage (q3Drive = 1.0 at max sustain)
-        x = highPass(x, s.h23_x, s.h23_y, hpS23A);
-        x = railSat(kQ3BaseAtten * kQ3LoadedGain * x, kVrail3);
-        x = lowPass(x, s.l3, lp3C);
-        x = diodeLoadedCollector(x, q3DiodeStrength);
+        // Stage 2: hard fuzz clip — two cascaded tanh for asymmetric saturation
+        x = fastTanh(x * 12.0f);
+        x = lowPass(x, s.l1, lp1C);   // ~7kHz LP, tames harshness post-clip
 
-        // Passive BMP tone stack (bilinear-transform biquad, noon setting)
-        {
-            const float y = tone_b0 * x        + tone_b1 * s.tx1 + tone_b2 * s.tx2
-                                                - tone_a1 * s.ty1 - tone_a2 * s.ty2;
-            s.tx2 = s.tx1; s.tx1 = x;
-            s.ty2 = s.ty1; s.ty1 = y;
-            x = y;
-        }
+        // Stage 3: second clip + mid-presence boost via LP blend
+        x = fastTanh(x * 8.0f);
+        x = lowPass(x, s.l2, lp2C);   // ~5.6kHz LP
 
-        // Recovery voicing: low shelf + 2 peaking EQs
-        x = processBiquad(x, s.Lx1, s.Lx2, s.Ly1, s.Ly2, voicingLow);
-        x = processBiquad(x, s.Cx1, s.Cx2, s.Cy1, s.Cy2, voicingChest);
+        // Tone: fixed mid-scoop via biquad voicing (reuse voicingMid coeff)
         x = processBiquad(x, s.Mx1, s.Mx2, s.My1, s.My2, voicingMid);
 
-        // Q4 recovery stage + C12 output coupling (sustainOutputComp = 1.0 at max)
-        x = railSat(kQ4BaseAtten * kQ4LoadedGain * x, kVrail4);
-        x = lowPass(x, s.lR, lpRC);
+        // Output DC block
         x = highPass(x, s.hO_x, s.hO_y, hpOutA);
 
         return x * kOutputGain;
@@ -144,7 +129,7 @@ private:
     static constexpr float kToneSweepMin  =   0.20f;
     static constexpr float kToneSweepMax  =   0.82f;
 
-    static constexpr float kOutputGain = 0.50f;  // TUNE ON HARDWARE
+    static constexpr float kOutputGain = 0.22f;  // Simplified fuzz clips to ~±1 (near square wave) — match MoonnSilver RMS level
 
     float sr = 48000.0f;
 

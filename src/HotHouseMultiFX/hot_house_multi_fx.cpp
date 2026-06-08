@@ -121,12 +121,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         cometTail.decay   = Map(k2, 0.5f, 10.0f);
         cometTail.texture = k3;
         cometTail.tone    = Map(k4, 0.0f, 100.0f);
-        cometTail.mix     = k5;
+        cometTail.mix     = k5 * 0.85f;  // cap at 85% wet — always some dry signal
     }
     else if (t3 == Hothouse::TOGGLESWITCH_MIDDLE)
     {
         // Kid Amnesia — 5 knobs: K6 is global volume
-        kidAmnesia.delay    = Map(k1, 20.0f, 550.0f);
+        kidAmnesia.delay    = Map(k1, 20.0f, 350.0f);  // noon=185ms — obvious echo, distinct from reverb
         kidAmnesia.feedback = Map(k2, 0.0f, 1.05f);
         kidAmnesia.blend    = k3;
         kidAmnesia.chrvib   = k4;
@@ -139,7 +139,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
         voidDweller.diffuse = k2;
         voidDweller.reflect = Map(k3, 0.0f, 0.95f);
         voidDweller.dampen  = Map(k4, 300.0f, 8000.0f);
-        voidDweller.mix     = k5;
+        voidDweller.mix     = k5 * 0.85f; // cap at 85% wet
         voidDweller.length  = 0.5f; // fixed — K6 is global volume
     }
 
@@ -195,9 +195,11 @@ void AudioCallback(AudioHandle::InputBuffer in,
             sigL = efL; sigR = efR;
         }
 
-        // K6 global output volume
-        out[0][i] = sigL * globalVolume;
-        out[1][i] = sigR * globalVolume;
+        // K6 global output volume — NaN guard prevents hard fault if any effect blows up
+        const float outL = sigL * globalVolume;
+        const float outR = sigR * globalVolume;
+        out[0][i] = std::isfinite(outL) ? outL : 0.0f;
+        out[1][i] = std::isfinite(outR) ? outR : 0.0f;
     }
 }
 
@@ -227,7 +229,8 @@ int main()
     hw.StartAdc();
     hw.StartAudio(AudioCallback);
 
-    uint32_t fs2HoldMs = 0; // single-footswitch DFU entry timer
+    uint32_t bothHoldMs = 0; // dual-footswitch DFU timer
+    uint32_t fs2HoldMs  = 0; // single-footswitch DFU timer
 
     while (true)
     {
@@ -238,15 +241,31 @@ int main()
         led1.Update();
         led2.Update();
 
-        // Standard dual-footswitch DFU entry (2s hold)
-        hw.CheckResetToBootloader();
+        // DFU entry: both footswitches held 2s → DaisyBoot QSPI mode
+        const bool fs1 = hw.switches[6].Pressed();
+        const bool fs2 = hw.switches[7].Pressed();
 
-        // Alternative: FS2 held alone for 4 seconds also enters DFU
-        if (hw.switches[7].Pressed())
-            fs2HoldMs += 6;
-        else
+        if (fs1 && fs2)
+        {
+            bothHoldMs += 6;
             fs2HoldMs = 0;
-        if (fs2HoldMs >= 4000)
-            daisy::System::ResetToBootloader();
+            if (bothHoldMs >= 2000)
+                daisy::System::ResetToBootloader(
+                    daisy::System::BootloaderMode::DAISY_INFINITE_TIMEOUT);
+        }
+        else if (fs2 && !fs1)
+        {
+            // FS2 alone for 4s — single-footswitch alternative
+            fs2HoldMs += 6;
+            bothHoldMs = 0;
+            if (fs2HoldMs >= 4000)
+                daisy::System::ResetToBootloader(
+                    daisy::System::BootloaderMode::DAISY_INFINITE_TIMEOUT);
+        }
+        else
+        {
+            bothHoldMs = 0;
+            fs2HoldMs  = 0;
+        }
     }
 }

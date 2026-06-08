@@ -70,6 +70,7 @@ public:
         for (int i = 0; i < 4; ++i)
             apStL[i] = apStR[i] = BqState{};
         dampStL = dampStR = BqState{};
+        dampSt2L = dampSt2R = BqState{};
         fbDampStL = fbDampStR = BqState{};
         amStL = amStR = BqState{};
     }
@@ -98,9 +99,9 @@ public:
 
         // Process each channel
         outL = processChannel(inL, bufL, fbStateL, safeRef, rt60L, 1.0f,
-                              apStL, dampStL, fbDampStL, amStL, apCoeffL);
+                              apStL, dampStL, dampSt2L, fbDampStL, amStL, apCoeffL);
         outR = processChannel(inR, bufR, fbStateR, safeRef, rt60R, 1.08f,
-                              apStR, dampStR, fbDampStR, amStR, apCoeffR);
+                              apStR, dampStR, dampSt2R, fbDampStR, amStR, apCoeffR);
 
         // Advance write position ONCE per sample (after both channels)
         writePos = (writePos + 1) % kBufLen;
@@ -112,8 +113,8 @@ private:
 
     float processChannel(float in, float* buf, float& fbState,
                          float safeRef, float rt60, float stereoOffset,
-                         BqState apSt[4], BqState& dampSt, BqState& fbDampSt,
-                         BqState& amSt, BqCoeffs apC[4]) noexcept
+                         BqState apSt[4], BqState& dampSt, BqState& dampSt2,
+                         BqState& fbDampSt, BqState& amSt, BqCoeffs apC[4]) noexcept
     {
         // Input soft clip
         float v = fastTanh(in * 0.6f);
@@ -157,20 +158,15 @@ private:
             wet += s * tapGain;
         }
 
-        // Dampen (cascaded LP × 2 for stronger effect, per original)
+        // Dampen (cascaded LP × 2 for stronger effect — separate states required)
         wet = biquad(wet, dampSt, dampC);
-        wet = biquad(wet, dampSt, dampC);
+        wet = biquad(wet, dampSt2, dampC);
 
         // Update feedback state (smooth to prevent zipper noise)
         fbState = fbState * 0.6f + wet * 0.4f;
 
-        wet *= 5.5f;
-        wet = fastTanh(wet * 0.65f);
-        wet = fastTanh(wet * 0.7f) * 1.15f;
-
-        const float autoGain  = 1.0f / (1.0f + reflect * 0.2f * 0.5f);
-        const float mixMakeup = 1.0f + mix * 4.5f;
-        return (in * (1.0f - mix) + wet * mix) * mixMakeup * autoGain;
+        // Simple wet/dry blend — no artificial gain multiplication (3.5x was causing static)
+        return in * (1.0f - mix) + wet * mix;
     }
 
     static float biquad(float x, BqState& s, const BqCoeffs& c) noexcept
@@ -263,6 +259,7 @@ private:
 
     BqState apStL[4], apStR[4];
     BqState dampStL, dampStR;
+    BqState dampSt2L, dampSt2R;
     BqState fbDampStL, fbDampStR;
     BqState amStL, amStR;
 };

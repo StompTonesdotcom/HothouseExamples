@@ -116,24 +116,34 @@ StompTones multi-FX pedal — 8 effects ported from JUCE plugins. Uses `APP_TYPE
 | Toggle 3 DOWN | Void Dweller — K1=drag K2=diffuse K3=reflect K4=dampen K5=mix (length fixed 0.5) |
 | K6 (all positions) | Global output volume (0=silence → 1=unity) |
 
-**Memory:** 146KB QSPI / 69KB SRAM / 1.6MB SDRAM
+**Memory:** 149KB QSPI / 69KB SRAM / 1.6MB SDRAM
 
 **Flashing:** Requires the Electrosmith Daisy bootloader on the Seed (NOT raw DFU to internal flash). The `APP_TYPE = BOOT_QSPI` Makefile flag selects the QSPI linker script.
 
-**QSPI flash procedure (Hothouse runs on DC power — USB alone won't reset it):**
-1. Power off the pedal completely: remove DC plug AND USB
-2. Run this command (it will wait for the device):
+**QSPI flash procedure — power cycle method (always works):**
+1. Unplug DC power AND USB from the pedal
+2. **Run dfu-util first** (it waits for the device — start this before plugging anything in):
    ```bash
    dfu-util -w -d ,0483:df11 -a 0 -s 0x90040000:leave -D build/hot_house_multi_fx.bin
    ```
-3. Plug in USB only (no DC) — DaisyBoot presents QSPI DFU in a 2-second window
-4. dfu-util connects and flashes automatically
+3. Plug in **USB only** (no DC) — DaisyBoot opens a 2-second DFU window
+4. dfu-util connects and flashes automatically ("Flash " interface = correct)
 5. "File downloaded successfully" = success. The "get_status" error at the end is a known false positive.
 
-**Alternative DFU entry from within the firmware:**
-- Hold both footswitches for 2 seconds (standard) — LEDs flash and device resets to bootloader
-- Hold FS2 alone for 4 seconds (single-footswitch alternative)
+**Critical:** If DC is also connected when you plug in USB, DaisyBoot launches the app immediately — no DFU window opens. USB-only is mandatory.
+
+**If dfu-util is stuck "Waiting for device" after you plug in USB:** The 2-second DaisyBoot window already expired (app launched, USB disappears — the app has no USB driver so the pedal is invisible to USB when running normally). Just unplug and replug USB to get a fresh 2-second window. dfu-util will catch it.
+
+**DFU entry from within the firmware (after DFU fix is flashed):**
+- Hold both footswitches for 2 seconds, OR hold FS2 alone for 4 seconds
 - Then run step 2 above and plug in USB only
+- These use `System::BootloaderMode::DAISY_INFINITE_TIMEOUT` — pedal stays in DFU until flashed
+
+**⚠️ Do NOT use `hw.CheckResetToBootloader()` in BOOT_QSPI apps.** It calls `System::ResetToBootloader()` with default `BootloaderMode::STM`, which puts the Daisy in ROM DFU mode ("Internal Flash   " in dfu-util). This interface cannot write to QSPI address 0x90040000 — the flash will fail with "Last page at 0x9006xxxx is not writeable". Instead, implement your own footswitch DFU trigger using `System::ResetToBootloader(System::BootloaderMode::DAISY_INFINITE_TIMEOUT)`.
+
+**How to tell which DFU mode you're in:**
+- `DfuSe interface name: "Flash "` → DaisyBoot QSPI mode ✅ correct
+- `DfuSe interface name: "Internal Flash   "` → STM ROM DFU ❌ wrong for QSPI apps
 
 **Large buffers in SDRAM:** Always declare large buffers `DSY_SDRAM_BSS`. All delay/chorus buffers are external SDRAM pointers passed into each effect's `Init()`.
 
@@ -142,5 +152,23 @@ StompTones multi-FX pedal — 8 effects ported from JUCE plugins. Uses `APP_TYPE
 - Quadrature oscillator for LFOs — 4 mul + 2 add per sample, no transcendentals
 - Cache `pow`/`exp` for filter coefficients — only recompute when parameter changes
 - `exp(x) ≈ 1+x` for very small |x| < 0.002 (filter decay coefficients)
+
+**Wet-only mix = silent cold buffers.** If mix is set to 1.0 (100% wet) and the reverb/delay buffer is cold (just powered on, or effect just enabled), no sound returns for 30–300ms — sounds like the effect is broken. Always cap mix at ~0.85 so at least 15% dry signal passes through at all times: `effect.mix = k5 * 0.85f`.
+
+**Unity gain calibration for distortions.** Hard-clipping distortions produce near-square waves, which have ~2× higher RMS energy than a sine wave at the same peak amplitude. A fuzz at ±0.43 peak sounds roughly twice as loud as a clean signal at ±0.43 peak. To match perceived loudness to bypass, target output peak around ±0.20–0.22 (not ±0.43). Hardware verification is essential — math alone will get you in the ballpark but won't account for the loudness perception difference. atan-based clippers (ST-9) vary with input level so a fixed gain can't fully compensate.
+
+**The app has no USB stack.** When HotHouseMultiFX is running normally, the Daisy Seed does not appear as any USB device at all. This is normal — if you plug in USB and see nothing in `dfu-util -l` or System Information, the firmware is running. Only during DaisyBoot's DFU window does it show up.
+
+**NaN in the audio output causes a hard fault that locks up the Cortex-M7.** Symptoms: effects and footswitches stop responding after a minute or two of use. Root cause: a DSP effect produces NaN (from overflow, division instability, or filter divergence), it propagates into `out[0][i]`/`out[1][i]`, and the STM32 audio DMA or codec handling traps. Fix: always guard audio outputs with `std::isfinite()`:
+```cpp
+out[0][i] = std::isfinite(outL) ? outL : 0.0f;
+out[1][i] = std::isfinite(outR) ? outR : 0.0f;
+```
+
+**Artificial wet-gain multipliers cause static, not loudness.** VoidDweller had `wet *= 3.5f` before a double-tanh output stage. With 10 feedback taps accumulating energy, the multiplier pushed the signal deep into saturation on every sample — sounded like white noise/static, not reverb. The fix was to remove it entirely and use a simple `in*(1-mix) + wet*mix` blend. Moral: don't add gain multipliers to wet signals before clippers; let the normalization from the tap summing do its job.
+
+**Complex transistor circuit models can produce NaN without an obvious single-point cause.** BorisFuzz v2 (a full nodal-analysis BJT model with bilinear-transform tone stack, 8 biquads, and 4 rail saturation stages) produced silence on hardware despite all individual stages appearing numerically stable in analysis. After exhausting code inspection, replaced Process() internals with a simple 3-stage soft-clip fuzz using the same filter coefficients. This produced correct output immediately. Lesson: full circuit simulation models are fragile to port — they can look correct on paper but diverge in 32-bit float on real hardware. Start simple, add complexity only if the simpler version sounds wrong.
+
+**Long delay times make effects sound indistinguishable at first listen.** KidAmnesia at K1=noon with a 285ms delay sounds like a washy reverb until enough echoes accumulate (~500ms). Users perceived it as identical to CometTail (a reverb). Fix: shorten the delay range so noon = ~185ms — the echo is immediately obvious and clearly different from a reverb tail. In general, map knob noon positions to the most musically useful/obvious setting, not the mathematical midpoint of the parameter range.
 
 _This section will grow as custom effects are built. Add notes here about design decisions, bugs found, and non-obvious behaviors._

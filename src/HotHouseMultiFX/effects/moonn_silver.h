@@ -94,5 +94,5 @@ private:
     // At full hardware volume (pot at max): original applies audioTaperGain(1.0)×kOutputTrim(0.5).
     // For unity at max vol: 0.956 × 1.0 × 0.5 = 0.478. Adjust down slightly for headroom.
     // TUNE ON HARDWARE: start here, raise/lower until bypass ≈ engaged level.
-    static constexpr float kOutputGain = 0.45f;
+    static constexpr float kOutputGain = 0.22f;  // Halved after hardware test — square wave RMS is ~2x louder than sine at same peak
 };
