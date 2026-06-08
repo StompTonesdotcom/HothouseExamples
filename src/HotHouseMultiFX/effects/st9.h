@@ -34,12 +34,14 @@ public:
         }
     }
 
+    float gain = 1.0f;  // Pre-gain multiplier (0.5=soft, 4.0=heavy saturation)
+
     // Process one sample for a given channel. Drive noon, tone noon, level noon.
     float Process(float in, int channel) noexcept
     {
         const int c = channel & 1;
 
-        float clipped = diodeClipper(in, 0.5f);
+        float clipped = diodeClipper(in * gain, 0.5f);
 
         // Mid boost (at native rate, biquad coefficients computed at sr)
         clipped = biquad(clipped, mid_x1[c], mid_x2[c], mid_y1[c], mid_y2[c],

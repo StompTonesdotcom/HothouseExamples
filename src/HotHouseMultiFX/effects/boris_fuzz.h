@@ -60,12 +60,14 @@ public:
         Reset();
     }
 
+    float gain = 1.0f;  // Pre-gain multiplier (0.5=soft, 4.0=heavy saturation)
+
     void Reset() noexcept { ch[0] = ch[1] = Ch{}; }
 
     float Process(float in, int channel) noexcept
     {
         auto& s = ch[channel & 1];
-        float x = in;
+        float x = in * gain;
 
         // Input DC block
         x = highPass(x, s.hI_x, s.hI_y, hpInA);

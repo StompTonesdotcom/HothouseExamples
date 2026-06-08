@@ -15,8 +15,9 @@
 class EarlyReflections2
 {
 public:
-    // Mix knob: 0=dry, 1=100% wet (at max knob = 100% wet, your preferred setting)
-    float mix = 1.0f;
+    float mix        = 1.0f;   // 0=dry, 1=100% wet
+    float preDelayMs = 75.0f;  // 0–200ms: controls when the swell starts
+    float room       = 20.0f;  // 5–30: tap spacing scale (larger = bigger room)
 
     // externalBuf must be at least kBufMax floats, allocated in SDRAM by the caller.
     void Init(float sampleRate, float* externalBuf) noexcept
@@ -26,9 +27,12 @@ public:
 
         preBufSize      = static_cast<int>(sampleRate * 0.090f) + 2;
         if (preBufSize > kPreBufMax) preBufSize = kPreBufMax;
-        preDelaySamples = static_cast<int>(75.0f * sampleRate / 1000.0f);
+        preDelaySamples = static_cast<int>(preDelayMs * sampleRate / 1000.0f);
+        if (preDelaySamples >= preBufSize) preDelaySamples = preBufSize - 1;
 
         buildTapPattern();
+        prevPreDelayMs = preDelayMs;
+        prevRoom       = room;
         Reset();
     }
 
@@ -45,6 +49,19 @@ public:
     void Process(float inL, float inR, float& outL, float& outR) noexcept
     {
         if (!buf) { outL = inL; outR = inR; return; }
+
+        // Update pre-delay or tap pattern if knobs changed (control-rate cost, not per-sample)
+        if (preDelayMs != prevPreDelayMs)
+        {
+            preDelaySamples = static_cast<int>(preDelayMs * sr / 1000.0f);
+            if (preDelaySamples >= preBufSize) preDelaySamples = preBufSize - 1;
+            prevPreDelayMs = preDelayMs;
+        }
+        if (room != prevRoom)
+        {
+            buildTapPattern();
+            prevRoom = room;
+        }
 
         const float monoIn = (inL + inR) * 0.5f;
 
@@ -94,7 +111,7 @@ private:
         };
 
         constexpr int activeTapCount = 13; // ER2 uses all 13 taps (vs ER1's 5)
-        constexpr float kRoomSize    = 20.0f;
+        const float kRoomSize = room;  // runtime — use member value
 
         // Rising gain envelope (REVERSE type, liveness 10 → riseSpanDb = 10 dB)
         constexpr float riseSpanDb = 10.0f;
@@ -149,6 +166,9 @@ private:
             }
         }
     }
+
+    float prevPreDelayMs = -1.0f;
+    float prevRoom       = -1.0f;
 
     float sr = 48000.0f;
     int   preBufSize = 0;

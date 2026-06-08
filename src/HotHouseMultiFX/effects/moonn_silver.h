@@ -28,6 +28,8 @@ public:
         Reset();
     }
 
+    float gain = 1.0f;  // Pre-gain multiplier (0.5=soft, 4.0=heavy saturation)
+
     void Reset() noexcept
     {
         ihpX = ihpY = ilpY = ohpX = ohpY = 0.0f;
@@ -35,7 +37,7 @@ public:
 
     float Process(float in) noexcept
     {
-        float x = in * kInputScale;
+        float x = in * gain * kInputScale;
 
         // Stage 1: 200× gain + asymmetric rail clip
         x = lm386Stage(x);
