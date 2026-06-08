@@ -54,12 +54,6 @@ daisy::Led led1, led2;
 bool fuzzOn  = false;
 bool reverbOn = false;
 
-// Tone LP filter: 1-pole, applied post-fuzz regardless of which algo
-float toneAlpha  = 1.0f;   // coefficient (recomputed when K2 changes)
-float toneStateL = 0.0f;
-float toneStateR = 0.0f;
-float prevToneK  = -1.0f;  // cached K2 to avoid recomputing every block
-
 // Smoothed knob values
 float k1=0.5f, k2=0.5f, k3=0.5f, k4=0.5f, k5=0.5f, k6=1.0f;
 static constexpr float kSmooth = 0.05f;
@@ -103,14 +97,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
     borisFuzz.gain = Map(k1, 0.5f, 4.0f);
     borisFuzz.tone = k2;
 
-    // Moonn Silver: K1=gain (0.5–4.0 pre-gain), K2=synthetic LP tone (not in original plugin)
+    // Moonn Silver: K1=gain (0.5–4.0 pre-gain), K2=LP tone (not in original, added for hardware)
     moonnSilver.gain = Map(k1, 0.5f, 4.0f);
-    if (std::abs(k2 - prevToneK) > 0.005f)
-    {
-        const float fc = Map(k2, 500.0f, 8000.0f);
-        toneAlpha = 1.0f - expf(-6.28318f * fc / hw.AudioSampleRate());
-        prevToneK = k2;
-    }
+    moonnSilver.tone = k2;
 
     // ST-9: K1=drive (0–1 TS-9 drive curve), K2=TS-9 passive tone stack (0–1)
     st9.drive = k1;
@@ -170,11 +159,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 }
                 else if (t1 == Hothouse::TOGGLESWITCH_MIDDLE)
                 {
-                    const float m = moonnSilver.Process(fL);
-                    fL = fR = m;
-                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
-                    toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
-                    toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
+                    moonnSilver.Process(fL, fR, fL, fR);
                 }
                 else
                 {
@@ -223,11 +208,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 }
                 else if (t1 == Hothouse::TOGGLESWITCH_MIDDLE)
                 {
-                    const float m = moonnSilver.Process(rL);
-                    rL = rR = m;
-                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
-                    toneStateL += toneAlpha * (rL - toneStateL); rL = toneStateL;
-                    toneStateR += toneAlpha * (rR - toneStateR); rR = toneStateR;
+                    moonnSilver.Process(rL, rR, rL, rR);
                 }
                 else
                 {
@@ -253,11 +234,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 }
                 else if (t1 == Hothouse::TOGGLESWITCH_MIDDLE)
                 {
-                    const float m = moonnSilver.Process(fL);
-                    fL = fR = m;
-                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
-                    toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
-                    toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
+                    moonnSilver.Process(fL, fR, fL, fR);
                 }
                 else
                 {

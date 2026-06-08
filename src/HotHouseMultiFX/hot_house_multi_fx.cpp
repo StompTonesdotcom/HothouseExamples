@@ -167,8 +167,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
         {
             if (t2 == Hothouse::TOGGLESWITCH_UP)
             {
-                const float m = moonnSilver.Process(sigL);
-                sigL = sigR = m;
+                moonnSilver.Process(sigL, sigR, sigL, sigR);
             }
             else if (t2 == Hothouse::TOGGLESWITCH_MIDDLE)
             {
