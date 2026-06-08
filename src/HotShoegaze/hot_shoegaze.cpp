@@ -90,18 +90,21 @@ void AudioCallback(AudioHandle::InputBuffer in,
     k5 += kSmooth * (hw.GetKnobValue(Hothouse::KNOB_5) - k5);
     k6 += kSmooth * (hw.GetKnobValue(Hothouse::KNOB_6) - k6);
 
-    // Footswitch latching (handled in main loop via callbacks — see main())
-    // (toggled via RegisterFootswitchCallbacks; just read the bool here)
-
     // Read toggles
     const auto t1 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_1);
     const auto t2 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_2);
     const auto t3 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_3);
 
-    // Fuzz gain: K1 maps 0.5 (gentle drive) to 4.0 (heavy saturation)
-    const float fuzzGain = Map(k1, 0.5f, 4.0f);
+    // K1 → fuzz intensity (pre-gain for Boris/Moonn Silver; drive curve for ST-9)
+    // K2 → tone: BMP passive tone stack (Boris), TS-9 tone stack (ST-9),
+    //            generic LP 500-8kHz (Moonn Silver — no tone knob in original)
 
-    // Tone filter coefficient: recompute only when K2 changes by >0.5%
+    // Boris Fuzz: K1=gain (0.5–4.0 pre-gain), K2=BMP tone (0=treble, 0.5=mid-scoop, 1=bass)
+    borisFuzz.gain = Map(k1, 0.5f, 4.0f);
+    borisFuzz.tone = k2;
+
+    // Moonn Silver: K1=gain (0.5–4.0 pre-gain), K2=synthetic LP tone (not in original plugin)
+    moonnSilver.gain = Map(k1, 0.5f, 4.0f);
     if (std::abs(k2 - prevToneK) > 0.005f)
     {
         const float fc = Map(k2, 500.0f, 8000.0f);
@@ -109,13 +112,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         prevToneK = k2;
     }
 
+    // ST-9: K1=drive (0–1 TS-9 drive curve), K2=TS-9 passive tone stack (0–1)
+    st9.drive = k1;
+    st9.tone  = k2;
+
     // Reverb mix capped at 85% — prevents silent-cold-buffer issue at 100% wet
     const float reverbMix = k3 * 0.85f;
-
-    // Assign fuzz gain to active algorithm
-    borisFuzz.gain   = fuzzGain;
-    moonnSilver.gain = fuzzGain;
-    st9.gain         = fuzzGain;
 
     // Assign reverb params based on Toggle 2
     if (t2 == Hothouse::TOGGLESWITCH_UP)
@@ -170,15 +172,15 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 {
                     const float m = moonnSilver.Process(fL);
                     fL = fR = m;
+                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
+                    toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
+                    toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
                 }
                 else
                 {
                     fL = st9.Process(fL, 0);
                     fR = st9.Process(fR, 1);
                 }
-                // Post-fuzz tone LP
-                toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
-                toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
             }
 
             if (reverbOn)
@@ -223,15 +225,15 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 {
                     const float m = moonnSilver.Process(rL);
                     rL = rR = m;
+                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
+                    toneStateL += toneAlpha * (rL - toneStateL); rL = toneStateL;
+                    toneStateR += toneAlpha * (rR - toneStateR); rR = toneStateR;
                 }
                 else
                 {
                     rL = st9.Process(rL, 0);
                     rR = st9.Process(rR, 1);
                 }
-                // Post-fuzz tone LP
-                toneStateL += toneAlpha * (rL - toneStateL); rL = toneStateL;
-                toneStateR += toneAlpha * (rR - toneStateR); rR = toneStateR;
             }
 
             sigL = rL; sigR = rR;
@@ -253,15 +255,15 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 {
                     const float m = moonnSilver.Process(fL);
                     fL = fR = m;
+                    // Synthetic LP tone (K2) — Moonn Silver has no tone knob in original
+                    toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
+                    toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
                 }
                 else
                 {
                     fL = st9.Process(fL, 0);
                     fR = st9.Process(fR, 1);
                 }
-                // Post-fuzz tone LP
-                toneStateL += toneAlpha * (fL - toneStateL); fL = toneStateL;
-                toneStateR += toneAlpha * (fR - toneStateR); fR = toneStateR;
             }
 
             if (reverbOn)

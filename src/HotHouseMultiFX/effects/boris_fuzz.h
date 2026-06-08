@@ -1,17 +1,15 @@
-// Boris Fuzz v2 — proper embedded port for Hothouse
+// Boris Fuzz v2 — embedded port for Hothouse
 // Ported from Boris-Fuzz_v2.0 JUCE plugin (StompTones).
 //
-// Uses runtime bilinear transform for the passive BMP tone stack (same nodal
-// analysis as the JUCE version — no hardcoded coefficients). Voicing biquads
-// computed via standard Audio EQ Cookbook formulas at Init time.
+// Simplified from the full BJT circuit model (which produced NaN/silence on hardware)
+// to a 3-stage tanh fuzz with the authentic passive BMP tone stack (bilinear transform).
+// See CLAUDE.md for the full story on why the circuit model was abandoned.
 //
-// No oversampling — runs at base sample rate. Tanh rail saturation and
-// proper diode-loaded collector model match the JUCE original.
+// Parameters exposed for runtime control:
+//   gain  — pre-gain multiplier (K1 maps 0.5–4.0)
+//   tone  — BMP tone stack wiper position 0=treble grind, 1=bass heavy, 0.5=mid-scoop
 //
-// CPU optimization: tanhf → fastTanh (Padé [2,2], < 1% error, ~8 cycles vs 50-200).
-// Called 6× per channel per sample — saves ~1200 cycles/stereo sample.
-//
-// Fixed params: max sustain, noon tone. kOutputGain = TUNE ON HARDWARE.
+// No oversampling — runs at base sample rate.
 
 #pragma once
 #include <cmath>
@@ -41,11 +39,9 @@ public:
         voicingChest = makePeakingBiquad (sr, 430.0f, 0.72f, 4.2f);
         voicingMid   = makePeakingBiquad (sr, 900.0f, 0.88f, 2.4f);
 
-        // Passive BMP tone stack at noon (tone param = 0.5):
-        // mapToneParameterToCircuitPosition(0.5)
-        //   = kToneSweepMin + 0.5 * (kToneSweepMax - kToneSweepMin)
-        //   = 0.20 + 0.5 * 0.62 = 0.51
-        updateToneCoeffs(kToneSweepMin + 0.5f * (kToneSweepMax - kToneSweepMin));
+        // Passive BMP tone stack — initial coefficients at noon
+        updateToneCoeffs(kToneSweepMin + tone * (kToneSweepMax - kToneSweepMin));
+        prevTone = tone;
 
         // Fixed sustain gains at max sustain (sustain = 1.0):
         //   sustainWindow = kSustainRangeMax = 1.0
@@ -61,11 +57,19 @@ public:
     }
 
     float gain = 1.0f;  // Pre-gain multiplier (0.5=soft, 4.0=heavy saturation)
+    float tone = 0.5f;  // BMP tone stack: 0=treble grind, 0.5=mid-scoop, 1=bass heavy
 
     void Reset() noexcept { ch[0] = ch[1] = Ch{}; }
 
     float Process(float in, int channel) noexcept
     {
+        // Update tone stack coefficients when knob changes (control-rate cost)
+        if (tone != prevTone)
+        {
+            updateToneCoeffs(kToneSweepMin + tone * (kToneSweepMax - kToneSweepMin));
+            prevTone = tone;
+        }
+
         auto& s = ch[channel & 1];
         float x = in * gain;
 
@@ -73,19 +77,24 @@ public:
         x = highPass(x, s.hI_x, s.hI_y, hpInA);
 
         // Stage 1: soft pre-drive
-        // 24× gain ensures full saturation even with low-level ER2 reverb input
         x = fastTanh(x * 24.0f);
 
-        // Stage 2: hard fuzz clip — two cascaded tanh for asymmetric saturation
+        // Stage 2: hard fuzz clip
         x = fastTanh(x * 12.0f);
-        x = lowPass(x, s.l1, lp1C);   // ~7kHz LP, tames harshness post-clip
+        x = lowPass(x, s.l1, lp1C);   // ~7kHz LP
 
-        // Stage 3: second clip + mid-presence boost via LP blend
+        // Stage 3: second clip
         x = fastTanh(x * 8.0f);
         x = lowPass(x, s.l2, lp2C);   // ~5.6kHz LP
 
-        // Tone: fixed mid-scoop via biquad voicing (reuse voicingMid coeff)
-        x = processBiquad(x, s.Mx1, s.Mx2, s.My1, s.My2, voicingMid);
+        // BMP tone stack (passive RC-ladder, bilinear transform — same as JUCE original)
+        {
+            const float y = tone_b0*x + tone_b1*s.tx1 + tone_b2*s.tx2
+                                      - tone_a1*s.ty1  - tone_a2*s.ty2;
+            s.tx2 = s.tx1; s.tx1 = x;
+            s.ty2 = s.ty1; s.ty1 = y;
+            x = y;
+        }
 
         // Output DC block
         x = highPass(x, s.hO_x, s.hO_y, hpOutA);
@@ -132,6 +141,8 @@ private:
     static constexpr float kToneSweepMax  =   0.82f;
 
     static constexpr float kOutputGain = 0.22f;  // Simplified fuzz clips to ~±1 (near square wave) — match MoonnSilver RMS level
+
+    float prevTone = -1.0f;  // cache to avoid recomputing tone coeffs every sample
 
     float sr = 48000.0f;
 

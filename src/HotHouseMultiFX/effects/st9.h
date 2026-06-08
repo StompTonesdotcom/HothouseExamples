@@ -1,7 +1,13 @@
 // ST-9 — Tube Screamer (TS-9) circuit model
 // Ported from ST-9 JUCE plugin (StompTones).
-// Fixed params: drive noon (0.5), tone noon (0.5), level noon (0.5).
-// 8× oversampling for the nonlinear clipper stage.
+//
+// Parameters exposed for runtime control:
+//   gain  — pre-gain before clipper (K1 maps 0.5–4.0)
+//   drive — TS-9 drive control 0–1; shapes atan clipper curve and mid-boost gain
+//   tone  — passive RC tone stack 0–1 (0=bass heavy, 0.5=noon, 1=treble bright)
+//
+// Note: JUCE original uses 8× oversampling around the clipper; this port runs
+// at base sample rate (no oversampling implemented).
 
 #pragma once
 #include <cmath>
@@ -9,16 +15,21 @@
 class ST9
 {
 public:
+    float gain  = 1.0f;   // Pre-gain before clipper (0.5=soft, 4.0=heavy)
+    float drive = 0.5f;   // TS-9 drive: 0=gentle, 1=full saturation
+    float tone  = 0.5f;   // Tone stack: 0=bass heavy, 0.5=noon, 1=treble bright
+
     void Init(float sampleRate) noexcept
     {
         sr = sampleRate;
 
-        // Mid boost biquad: +8 dB peak @ 720 Hz, Q=1.2 (TS9 signature)
-        makePeak(720.0f, 1.2f, 8.0f,
+        // Mid boost biquad: gain varies 4–8 dB with drive (JUCE: 4+4*drive dB)
+        makePeak(720.0f, 1.2f, 4.0f + 4.0f * drive,
                  midB0, midB1, midB2, midA1, midA2);
 
-        // Tone stack at noon: bass shelf cuts −6 dB @ 800 Hz, treble shelf cuts −5 dB @ 1150 Hz
-        updateToneStack(0.5f);
+        updateToneStack(tone);
+        prevDrive = drive;
+        prevTone  = tone;
 
         Reset();
     }
@@ -34,23 +45,33 @@ public:
         }
     }
 
-    float gain = 1.0f;  // Pre-gain multiplier (0.5=soft, 4.0=heavy saturation)
-
-    // Process one sample for a given channel. Drive noon, tone noon, level noon.
+    // Process one sample for a given channel.
     float Process(float in, int channel) noexcept
     {
+        // Update filter coefficients when drive or tone changes (control-rate cost)
+        if (drive != prevDrive)
+        {
+            makePeak(720.0f, 1.2f, 4.0f + 4.0f * drive,
+                     midB0, midB1, midB2, midA1, midA2);
+            prevDrive = drive;
+        }
+        if (tone != prevTone)
+        {
+            updateToneStack(tone);
+            prevTone = tone;
+        }
+
         const int c = channel & 1;
 
-        float clipped = diodeClipper(in * gain, 0.5f);
+        float clipped = diodeClipper(in * gain, drive);
 
-        // Mid boost (at native rate, biquad coefficients computed at sr)
+        // Mid boost (TS-9 signature: 720 Hz peaking, gain varies with drive)
         clipped = biquad(clipped, mid_x1[c], mid_x2[c], mid_y1[c], mid_y2[c],
                          midB0, midB1, midB2, midA1, midA2);
 
-        // Tone stack: low shelf
+        // Tone stack: low shelf + high shelf
         clipped = biquad(clipped, tone_x1[c], tone_x2[c], tone_y1[c], tone_y2[c],
                          toneB0, toneB1, toneB2, toneA1, toneA2);
-        // Tone stack: high shelf
         clipped = biquad(clipped, tone2_x1[c], tone2_x2[c], tone2_y1[c], tone2_y2[c],
                          tone2B0, tone2B1, tone2B2, tone2A1, tone2A2);
 
@@ -58,8 +79,8 @@ public:
         float blocked = clipped - dc[c];
         dc[c] = dc[c] * 0.999f + clipped * 0.001f;
 
-        // Level at noon (0.5) × drive compensation at noon
-        const float driveComp = 1.0f - 0.528f * 0.5f + 0.280f * 0.25f; // ≈ 0.806
+        // Level: drive compensation scales output to maintain consistent loudness
+        const float driveComp = 1.0f - 0.528f * drive + 0.280f * (drive * drive);
         return blocked * 0.5f * 1.5f * driveComp * kUnityGain;
     }
 
@@ -146,10 +167,10 @@ private:
         makeHighShelf(trebleFreq, trebleDb, tone2B0, tone2B1, tone2B2, tone2A1, tone2A2);
     }
 
-    // TUNE ON HARDWARE. atan() at drive noon (0.5) clips to ~0.9 normalized.
-    // level(0.5) × 1.5 × driveComp(0.5) ≈ 0.605 in original. Target: ~0.9 × 0.605 ≈ 0.54.
-    // Set slightly above 1.0 to account for the mid-boost adding apparent loudness.
     static constexpr float kUnityGain = 1.0f; // TUNE ON HARDWARE
+
+    float prevDrive = -1.0f;
+    float prevTone  = -1.0f;
 
     float sr = 48000.0f;
 
