@@ -97,4 +97,50 @@ To create a new effect, copy an existing example dir and modify. The `Makefile` 
 
 ## Custom Projects
 
+### HotHouseMultiFX (`src/HotHouseMultiFX/`)
+
+StompTones multi-FX pedal — 8 effects ported from JUCE plugins. Uses `APP_TYPE = BOOT_QSPI` (code in 8MB QSPI flash, not 128KB internal flash).
+
+**Signal chain:** Toggle1 (pre-dist) → FS1 Distortion (Toggle2) → FS2 Main effect (Toggle3)
+
+| Control | Function |
+|---|---|
+| Toggle 1 UP | Early Reflections 2 (fixed: reverse, room=20, live=10, 75ms pre-delay) |
+| Toggle 1 MID | Off |
+| Toggle 1 DOWN | Mini Me Chorus (fixed default settings) |
+| FS1 + LED1 | Distortion on/off |
+| Toggle 2 UP/MID/DOWN | Moonn Silver / Boris Fuzz v2 / ST-9 (all fixed, unity gain) |
+| FS2 + LED2 | Main effect on/off |
+| Toggle 3 UP | Comet Tail — K1=sustain K2=decay K3=texture K4=tone K5=mix |
+| Toggle 3 MID | Kid Amnesia — K1=delay K2=feedback K3=blend K4=chrvib K5=depth |
+| Toggle 3 DOWN | Void Dweller — K1=drag K2=diffuse K3=reflect K4=dampen K5=mix (length fixed 0.5) |
+| K6 (all positions) | Global output volume (0=silence → 1=unity) |
+
+**Memory:** 146KB QSPI / 69KB SRAM / 1.6MB SDRAM
+
+**Flashing:** Requires the Electrosmith Daisy bootloader on the Seed (NOT raw DFU to internal flash). The `APP_TYPE = BOOT_QSPI` Makefile flag selects the QSPI linker script.
+
+**QSPI flash procedure (Hothouse runs on DC power — USB alone won't reset it):**
+1. Power off the pedal completely: remove DC plug AND USB
+2. Run this command (it will wait for the device):
+   ```bash
+   dfu-util -w -d ,0483:df11 -a 0 -s 0x90040000:leave -D build/hot_house_multi_fx.bin
+   ```
+3. Plug in USB only (no DC) — DaisyBoot presents QSPI DFU in a 2-second window
+4. dfu-util connects and flashes automatically
+5. "File downloaded successfully" = success. The "get_status" error at the end is a known false positive.
+
+**Alternative DFU entry from within the firmware:**
+- Hold both footswitches for 2 seconds (standard) — LEDs flash and device resets to bootloader
+- Hold FS2 alone for 4 seconds (single-footswitch alternative)
+- Then run step 2 above and plug in USB only
+
+**Large buffers in SDRAM:** Always declare large buffers `DSY_SDRAM_BSS`. All delay/chorus buffers are external SDRAM pointers passed into each effect's `Init()`.
+
+**CPU optimization notes:** libm tanhf / std::tanh / std::exp / std::sin are software-implemented on Cortex-M7 (~50-200 cycles each, no FPU instruction). Replace with:
+- `fastTanh(x)` from `effects/fast_math.h` — Padé [2,2], <1% error, ~8 cycles
+- Quadrature oscillator for LFOs — 4 mul + 2 add per sample, no transcendentals
+- Cache `pow`/`exp` for filter coefficients — only recompute when parameter changes
+- `exp(x) ≈ 1+x` for very small |x| < 0.002 (filter decay coefficients)
+
 _This section will grow as custom effects are built. Add notes here about design decisions, bugs found, and non-obvious behaviors._
