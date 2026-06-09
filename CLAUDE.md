@@ -111,7 +111,7 @@ StompTones multi-FX pedal — 8 effects ported from JUCE plugins. Uses `APP_TYPE
 | FS1 + LED1 | Distortion on/off |
 | Toggle 2 UP/MID/DOWN | Moonn Silver / Boris Fuzz v2 / ST-9 (all fixed, unity gain) |
 | FS2 + LED2 | Main effect on/off |
-| Toggle 3 UP | Comet Tail — K1=sustain K2=decay K3=texture K4=tone K5=mix |
+| Toggle 3 UP | Comet Tail — K1=sustain K2=decay K3=texture K4=mix K5=tone |
 | Toggle 3 MID | Kid Amnesia — K1=delay K2=feedback K3=blend K4=chrvib K5=depth |
 | Toggle 3 DOWN | Void Dweller — K1=drag K2=diffuse K3=reflect K4=dampen K5=mix (length fixed 0.5) |
 | K6 (all positions) | Global output volume (0=silence → 1=unity) |

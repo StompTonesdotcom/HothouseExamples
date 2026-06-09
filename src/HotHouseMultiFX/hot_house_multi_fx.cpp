@@ -120,13 +120,13 @@ void AudioCallback(AudioHandle::InputBuffer in,
         cometTail.sustain = k1;
         cometTail.decay   = Map(k2, 0.5f, 10.0f);
         cometTail.texture = k3;
-        cometTail.tone    = Map(k4, 0.0f, 100.0f);
-        cometTail.mix     = k5 * 0.85f;  // cap at 85% wet — always some dry signal
+        cometTail.mix     = k4 * 0.85f;  // cap at 85% wet — always some dry signal
+        cometTail.tone    = Map(k5, 0.0f, 100.0f);
     }
     else if (t3 == Hothouse::TOGGLESWITCH_MIDDLE)
     {
         // Kid Amnesia — 5 knobs: K6 is global volume
-        kidAmnesia.delay    = Map(k1, 20.0f, 350.0f);  // noon=185ms — obvious echo, distinct from reverb
+        kidAmnesia.delay    = Map(k1, 20.0f, 550.0f);
         kidAmnesia.feedback = Map(k2, 0.0f, 1.05f);
         kidAmnesia.blend    = k3;
         kidAmnesia.chrvib   = k4;
@@ -135,10 +135,10 @@ void AudioCallback(AudioHandle::InputBuffer in,
     else
     {
         // Void Dweller — 5 knobs: length fixed at 0.5 (1s decay), K6 is global volume
-        voidDweller.drag    = Map(k1, 10.0f, 200.0f);
+        voidDweller.drag    = 10.0f + 190.0f * k1 * k1;           // plugin skew 0.5 → ^2
         voidDweller.diffuse = k2;
         voidDweller.reflect = Map(k3, 0.0f, 0.95f);
-        voidDweller.dampen  = Map(k4, 300.0f, 8000.0f);
+        voidDweller.dampen  = 300.0f + 7700.0f * k4 * k4 * sqrtf(k4); // plugin skew 0.4 → ^2.5
         voidDweller.mix     = k5 * 0.85f; // cap at 85% wet
         voidDweller.length  = 0.5f; // fixed — K6 is global volume
     }

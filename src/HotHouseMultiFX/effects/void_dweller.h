@@ -116,11 +116,11 @@ private:
                          BqState apSt[4], BqState& dampSt, BqState& dampSt2,
                          BqState& fbDampSt, BqState& amSt, BqCoeffs apC[4]) noexcept
     {
-        // Input soft clip
-        float v = fastTanh(in * 0.6f);
-        v = fastTanh(v * 0.9f) * 0.95f;
-        v = biquad(v, fbDampSt, fbDampC);
-        v = biquadRaw(v, amSt, amB0, amB1, amB2, amA1, amA2);
+        // Clean input path — fbDampSt and amSt removed.
+        // fbDampSt (LP on input) + amSt (HF shelf) interacted with the 10-tap feedback
+        // to produce resonances that sounded like constant static.
+        // Loop stability is now guaranteed by clampedRef below; input needs no conditioning.
+        float v = in;
 
         // All-pass diffusion
         float diffused = v;
@@ -132,15 +132,24 @@ private:
             diffused = v + (wet - v) * diffuse * 0.85f;
         }
 
-        // Write input to circular buffer ONCE (before reading taps)
-        const float tapIn = diffused + fbState * safeRef * rt60;
-        buf[writePos] = tapIn;
-
         // Read from 10 tap positions
         static constexpr float kTapMult[kNumTaps] = {
             0.4f, 0.9f, 1.5f, 2.1f, 2.9f, 3.9f, 5.1f, 6.5f, 8.1f, 10.0f
         };
         const float normSum = fmaxf(0.1f, 4.0f - length * 2.5f);
+
+        // Stability guarantee: loop gain = (kTapSum/normSum) * safeRef must stay < 1.
+        // kTapSum = Σ fadeIn/sqrt(t+1) for t=0..9 ≈ 4.22 (depends only on kTapMult, fixed).
+        // normSum decreases with length, amplifying tap gains — without this clamp,
+        // reflect above ~0.76 at noon length (or less at higher length) causes oscillation.
+        // Clamp safeRef so that max loop gain = 0.98 regardless of length+reflect combination.
+        static constexpr float kTapSum = 4.22f;
+        const float clampedRef = fminf(safeRef, 0.98f * normSum / kTapSum);
+
+        // Write to circular buffer; fastTanh is an additional overflow hard-stop
+        const float tapIn = diffused + fbState * clampedRef * rt60;
+        buf[writePos] = fastTanh(tapIn);
+
         float wet = 0.0f;
 
         for (int t = 0; t < kNumTaps; ++t)
