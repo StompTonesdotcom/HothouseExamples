@@ -116,11 +116,9 @@ private:
                          BqState apSt[4], BqState& dampSt, BqState& dampSt2,
                          BqState& fbDampSt, BqState& amSt, BqCoeffs apC[4]) noexcept
     {
-        // Clean input path — fbDampSt and amSt removed.
-        // fbDampSt (LP on input) + amSt (HF shelf) interacted with the 10-tap feedback
-        // to produce resonances that sounded like constant static.
-        // Loop stability is now guaranteed by clampedRef below; input needs no conditioning.
-        float v = in;
+        // Input soft-clip: matches JUCE input conditioning (LP/HF shelf removed — caused static)
+        float v = fastTanh(in * 0.6f);
+        v = fastTanh(v * 0.9f) * 0.95f;
 
         // All-pass diffusion
         float diffused = v;
@@ -171,11 +169,17 @@ private:
         wet = biquad(wet, dampSt, dampC);
         wet = biquad(wet, dampSt2, dampC);
 
-        // Update feedback state (smooth to prevent zipper noise)
+        // Update feedback state with pre-amplified wet (keeps loop stable)
         fbState = fbState * 0.6f + wet * 0.4f;
 
-        // Simple wet/dry blend — no artificial gain multiplication (3.5x was causing static)
-        return in * (1.0f - mix) + wet * mix;
+        // JUCE output chain: amplify + soft-clip wet, then mix with makeup
+        // mixMakeup and autoGain match JUCE exactly; safe because fbState updated above
+        wet *= 5.5f;
+        wet = fastTanh(wet * 0.65f);
+        wet = fastTanh(wet * 0.7f) * 1.15f;
+        const float mixMakeup = 1.0f + mix * 4.5f;
+        const float autoGain  = 1.0f / (1.0f + reflect * 0.1f);
+        return (in * (1.0f - mix) + wet * mix) * mixMakeup * autoGain;
     }
 
     static float biquad(float x, BqState& s, const BqCoeffs& c) noexcept

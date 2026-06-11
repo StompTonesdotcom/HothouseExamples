@@ -109,7 +109,7 @@ public:
 private:
     static constexpr float kDryWeight = 27.0f / 49.0f;
     static constexpr float kWetWeight = 22.0f / 49.0f;
-    static constexpr float kMakeup    = 1.18f;
+    static constexpr float kMakeup    = 1.4069f; // matches JUCE kMiniMeOutputMakeup
 
     float sr = 48000.0f;
     float lfoHz = 1.72f;
