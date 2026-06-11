@@ -16,6 +16,7 @@
 #pragma once
 #include <cmath>
 #include "fast_math.h"
+#include "os2.h"
 
 class KidAmnesia
 {
@@ -53,6 +54,8 @@ public:
         lfoSin = 0.0f; lfoCos = 1.0f; prevChrvib = -99.0f;
         writePos    = 0;
         compEnv = expEnv = 0.0f;
+        osSat.reset();
+        osWrite.reset();
 
         Reset();
     }
@@ -66,6 +69,7 @@ public:
         compEnv = expEnv = 0.0f;
         lfoSin = 0.0f; lfoCos = 1.0f; prevChrvib = -99.0f;
         preS = {}; deS = {}; bbdInS = {}; bbdOutS = {};
+        osSat.reset(); osWrite.reset();
     }
 
     void Process(float inL, float inR, float& outL, float& outR) noexcept
@@ -81,7 +85,7 @@ public:
 
         // LFO — quadrature oscillator (no sin/cos per sample)
         // Increments recomputed only when chrvib knob changes
-        constexpr float kChR = 0.4f, kVibR = 4.0f;
+        constexpr float kChR = 0.9f, kVibR = 4.0f; // 0.9 matches JUCE kChorusLFORate floor
         if (fabsf(chrvib - prevChrvib) > 0.001f) {
             prevChrvib = chrvib;
             const float omega = (kChR + chrvib * (kVibR - kChR)) * 6.28318f / sr;
@@ -105,14 +109,22 @@ public:
         delayed = biquad(delayed, bbdOutS, bbdOB0, bbdOB1, bbdOB2, bbdOA1, bbdOA2);
         delayed = ne570Exp(delayed);
         delayed = biquad(delayed, deS, deB0, deB1, deB2, deA1, deA2);
-        delayed = fastTanh(delayed * 0.6f) / 0.6f;
+        // 2x OS on output soft-saturator (reduces tanh aliasing)
+        { float s0, s1;
+          osSat.up(delayed, s0, s1);
+          s0 = fastTanh(s0 * 0.6f) / 0.6f;
+          s1 = fastTanh(s1 * 0.6f) / 0.6f;
+          delayed = osSat.dn(s0, s1); }
 
         // Step 2: Input path + write
         const float fbSig = delayed * feedback;
         const float preEmp = biquad(monoIn, preS, preB0, preB1, preB2, preA1, preA2);
         const float comp   = ne570Comp(preEmp);
         const float toWrite = biquad(comp + fbSig, bbdInS, bbdIB0, bbdIB1, bbdIB2, bbdIA1, bbdIA2);
-        delayBuf[writePos] = fastTanh(toWrite);
+        // 2x OS on BBD write saturator
+        { float w0, w1;
+          osWrite.up(toWrite, w0, w1);
+          delayBuf[writePos] = osWrite.dn(fastTanh(w0), fastTanh(w1)); }
         writePos = (writePos + 1) % kMaxDelaySamples;
 
         // Output mix with equal-power makeup
@@ -229,4 +241,8 @@ private:
     float bbdOB0=1,bbdOB1=0,bbdOB2=0,bbdOA1=0,bbdOA2=0;
 
     BqState preS, deS, bbdInS, bbdOutS;
+
+    // 2x oversamplers for the two tanh saturation stages
+    OS2 osSat;    // BBD output soft-saturator
+    OS2 osWrite;  // BBD write saturator
 };

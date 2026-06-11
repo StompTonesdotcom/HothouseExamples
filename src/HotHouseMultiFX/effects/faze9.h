@@ -59,7 +59,7 @@ private:
     static constexpr float kFeedback   = 0.45f;
     static constexpr float kMinPoleHz  = 150.0f;
     static constexpr float kMaxPoleHz  = 1600.0f;
-    static constexpr float kOutputMakeup = 1.0f; // unity
+    static constexpr float kOutputMakeup = 1.4142f; // sqrt(2) — matches JUCE kFaze9OutputMakeup
 
     static float allPass(float in, float& state, float coeff) noexcept
     {

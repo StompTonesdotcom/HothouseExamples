@@ -57,6 +57,11 @@ public:
     static constexpr int kAPTotalL = 605+480+371+245; // 1701
     static constexpr int kAPTotalR = 628+503+394+268; // 1793
 
+    // Wet-signal calibration trim. The Schroeder comb network naturally
+    // accumulates energy above unity. 0.85 is the hardware starting point —
+    // increase if the reverb still sounds too quiet, decrease if it clips.
+    static constexpr float kWetTrim = 0.85f;
+
     // ── Init ────────────────────────────────────────────────────────────────
     void Init(float sampleRate,
               float* combBufL, float* combBufR,
@@ -224,7 +229,7 @@ public:
         //   wetAutoGain = 1 / (1 + (bloomNorm*0.4 + sway*0.3) * 1.5)
         const float bloomNorm   = (bloom - 0.1f) / 2.9f;
         const float wetAutoGain = 1.0f / (1.0f + (bloomNorm * 0.4f + sway * 0.3f) * 1.5f);
-        const float wetScale    = mix * 0.6f * wetAutoGain;
+        const float wetScale    = mix * kWetTrim * wetAutoGain;
         const float dryScale    = 1.0f - mix;
 
         float ol = inL * dryScale + washStL * wetScale;

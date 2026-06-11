@@ -44,8 +44,8 @@ using clevelandmusicco::Hothouse;
 // SDRAM buffers
 // ============================================================================
 float DSY_SDRAM_BSS er2_buf       [EarlyReflections2::kBufMax];
-float DSY_SDRAM_BSS comet_combL   [CometTail::kCombTotal];
-float DSY_SDRAM_BSS comet_combR   [CometTail::kCombTotal];
+float DSY_SDRAM_BSS comet_combL   [CometTail::kCombBufMax];
+float DSY_SDRAM_BSS comet_combR   [CometTail::kCombBufMax];
 float DSY_SDRAM_BSS comet_cL      [CometTail::kChorusLen];
 float DSY_SDRAM_BSS comet_cR      [CometTail::kChorusLen];
 float DSY_SDRAM_BSS amnesia_buf   [KidAmnesia::kMaxDelaySamples];

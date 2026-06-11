@@ -1,6 +1,13 @@
 // Comet Tail — Infinite sustain reverb
 // Ported from TheCometTail JUCE plugin (StompTones).
-// Inline Schroeder reverb (4 comb + 2 allpass).
+// Freeverb core: 8-comb + 4-allpass per channel (standard 48kHz lengths).
+//
+// Matches juce::dsp::Reverb internals:
+//   - Stereo: separate L/R comb lengths (+26 samples spread for R)
+//   - Input scaled by fixedGain = 0.015f (Freeverb normalization)
+//   - roomSize → combFb via Freeverb formula: fb = roomSize*0.28 + 0.70
+//   - Allpass: JUCE variant — buf[wp] = x + g*buf[wp]; return buf[wp-N] - g*x
+//   - Separate 4-allpass chains for L and R (true stereo diffusion)
 //
 // CPU optimizations vs. original:
 //   - Shimmer windows use quadrature oscillators (no cosf per sample in grain loop)
@@ -26,13 +33,16 @@ class CometTail
 {
 public:
     // SDRAM buffer sizes
-    static constexpr int kChorusLen  = 1444;   // 30ms @ 48kHz
-    static constexpr int kGrainBufLen = 19200; // 400ms @ 48kHz (shimmer; nullable)
+    static constexpr int kChorusLen  = 1444;    // 30ms @ 48kHz
+    static constexpr int kGrainBufLen = 19200;  // 400ms @ 48kHz (shimmer; nullable)
 
-    // Comb filter delay lengths (prime-ish, tuned for 48kHz)
-    static constexpr int kCombL0 = 1557, kCombL1 = 1617, kCombL2 = 1491, kCombL3 = 1422;
-    static constexpr int kAP0 = 225, kAP1 = 341;
-    static constexpr int kCombTotal = kCombL0 + kCombL1 + kCombL2 + kCombL3;
+    static constexpr int kCombTotalL   = 11998;
+    static constexpr int kCombTotalR   = 12200;
+    static constexpr int kCombBufMax   = kCombTotalR;  // allocate this for both external buffers
+
+    // Freeverb allpass lengths at 48kHz — L and R differ by ~25-sample stereo spread
+    static constexpr int kAPL0 = 605, kAPL1 = 480, kAPL2 = 371, kAPL3 = 245;
+    static constexpr int kAPR0 = 630, kAPR1 = 505, kAPR2 = 396, kAPR3 = 270;
 
     float sustain = 0.0f;
     float shimmer = 0.0f;
@@ -41,7 +51,7 @@ public:
     float mix     = 0.5f;
     float tone    = 50.0f;
 
-    // externalCombL/R:   kCombTotal floats each (SDRAM)
+    // externalCombL/R:   kCombBufMax floats each (SDRAM)
     // externalChorusL/R: kChorusLen floats each (SDRAM)
     // externalGrainBuf:  kGrainBufLen floats (SDRAM); pass nullptr to disable shimmer
     void Init(float sampleRate,
@@ -68,8 +78,6 @@ public:
         // Shimmer: 4-grain granular pitch shifter
         // L side: P5 − 2¢ (slightly flat for dreamy beating against R)
         // R side: Oct + 2¢ (slightly sharp)
-        // Window freq per grain: pitchRatio / grainSize cycles/sample
-        // — use quadrature oscillator (no cosf in inner loop)
         if (grainBuf)
         {
             const int grainSize = kGrainBufLen / 4;
@@ -82,13 +90,12 @@ public:
             winSinIncR = sinf(omegaR);
             winCosIncR = cosf(omegaR);
 
-            // Grains uniformly distributed; initial window phase = k * π/2
             for (int k = 0; k < 4; ++k)
             {
                 grainPhaseL[k] = static_cast<float>(k * grainSize);
-                grainPhaseR[k] = static_cast<float>(k * grainSize);
+                grainPhaseR[k] = static_cast<float>(k * grainSize + grainSize / 2);
 
-                const float initPh = static_cast<float>(k) * 1.57080f; // k * π/2
+                const float initPh = static_cast<float>(k) * 1.57080f;
                 winCosL[k] = cosf(initPh);
                 winSinL[k] = sinf(initPh);
                 winCosR[k] = winCosL[k];
@@ -101,13 +108,9 @@ public:
             grainWriteLP  = 0.0f;
             shimLPL = shimLPR = 0.0f;
 
-            // 10kHz anti-aliasing LP on grain writes
             grainAAAlpha = 1.0f - expf(-6.28318f * 10000.0f / sampleRate);
-            // 4kHz soft LP on shimmer output (limits harmonic stacking)
-            shimLPAlpha  = 1.0f - expf(-6.28318f * 4000.0f / sampleRate);
-            // Safety zone: 5ms fade-in when grain read approaches write pos
+            shimLPAlpha  = 1.0f - expf(-6.28318f * 4000.0f  / sampleRate);
             grainSafetyZone  = static_cast<int>(sampleRate * 0.005f);
-            // Recovery TC = 10ms
             grainSafetyCoeff = expf(-1.0f / (0.010f * sampleRate));
         }
 
@@ -116,17 +119,23 @@ public:
 
     void Reset() noexcept
     {
-        if (combBufL)  for (int i = 0; i < kCombTotal;  ++i) combBufL[i]  = 0.0f;
-        if (combBufR)  for (int i = 0; i < kCombTotal;  ++i) combBufR[i]  = 0.0f;
+        if (combBufL)  for (int i = 0; i < kCombTotalL; ++i) combBufL[i]  = 0.0f;
+        if (combBufR)  for (int i = 0; i < kCombTotalR; ++i) combBufR[i]  = 0.0f;
         if (chorusBufL) for (int i = 0; i < kChorusLen; ++i) chorusBufL[i] = 0.0f;
         if (chorusBufR) for (int i = 0; i < kChorusLen; ++i) chorusBufR[i] = 0.0f;
         if (grainBuf)  for (int i = 0; i < kGrainBufLen; ++i) grainBuf[i]  = 0.0f;
 
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 8; ++i)
             combWpL[i] = combWpR[i] = 0, combLPL[i] = combLPR[i] = 0.0f;
-        apWp[0] = apWp[1] = 0;
-        for (int i = 0; i < kAP0; ++i) apBuf0[i] = 0.0f;
-        for (int i = 0; i < kAP1; ++i) apBuf1[i] = 0.0f;
+        for (int i = 0; i < 4; ++i) apWpL[i] = apWpR[i] = 0;
+        for (int i = 0; i < kAPL0; ++i) apBufL0[i] = 0.0f;
+        for (int i = 0; i < kAPL1; ++i) apBufL1[i] = 0.0f;
+        for (int i = 0; i < kAPL2; ++i) apBufL2[i] = 0.0f;
+        for (int i = 0; i < kAPL3; ++i) apBufL3[i] = 0.0f;
+        for (int i = 0; i < kAPR0; ++i) apBufR0[i] = 0.0f;
+        for (int i = 0; i < kAPR1; ++i) apBufR1[i] = 0.0f;
+        for (int i = 0; i < kAPR2; ++i) apBufR2[i] = 0.0f;
+        for (int i = 0; i < kAPR3; ++i) apBufR3[i] = 0.0f;
 
         chorusWritePos = 0;
         lfoSin = 0.0f; lfoCos = 1.0f;
@@ -144,46 +153,58 @@ public:
 
         const float dryL = inL, dryR = inR;
 
-        const float maxFb = 0.72f + (decay - 0.5f) / 9.5f * 0.27f;
-        const float fb    = fminf(0.99f, 0.50f + sustain * (maxFb - 0.50f));
-        const float damp  = 0.2f;
+        // Freeverb roomSize → combFb mapping (matches juce::dsp::Reverb internals)
+        const float maxRoomSize = 0.72f + (decay - 0.5f) / 9.5f * 0.27f;
+        const float roomSize    = fminf(0.99f, 0.50f + sustain * (maxRoomSize - 0.50f));
+        const float combFb      = roomSize * 0.28f + 0.70f;
+        // Freeverb damping: lp = out*(1-damp) + lp*damp → ~8kHz LP at damp=0.35
+        static constexpr float damp = 0.35f;
 
-        const float mono = (inL + inR) * 0.5f;
+        // Freeverb fixedGain: prevents comb build-up from clipping at max feedback
+        const float scaledMono = (inL + inR) * 0.5f * 0.015f;
 
-        static constexpr int kLens[4] = { kCombL0, kCombL1, kCombL2, kCombL3 };
-        static constexpr int kOffs[4] = { 0, kCombL0, kCombL0+kCombL1,
-                                          kCombL0+kCombL1+kCombL2 };
+        // Freeverb 8-comb lengths at 48kHz (scaled from 44.1kHz originals)
+        static const int kLensL[8]  = {1214,1293,1390,1476,1548,1622,1695,1760};
+        static const int kLensR[8]  = {1240,1318,1415,1501,1573,1648,1720,1785};
+        static const int kOffsL[8]  = {0,1214,2507,3897,5373,6921,8543,10238};
+        static const int kOffsR[8]  = {0,1240,2558,3973,5474,7047,8695,10415};
+
+        // 8 parallel comb filters per channel (different lengths = stereo width)
         float combSumL = 0.0f, combSumR = 0.0f;
-        for (int c = 0; c < 4; ++c)
+        for (int c = 0; c < 8; ++c)
         {
-            const int len = kLens[c];
-            const int off = kOffs[c];
             {
-                float* buf = combBufL + off;
+                float* buf = combBufL + kOffsL[c];
                 int&   wp  = combWpL[c];
                 float& lp  = combLPL[c];
                 const float o = buf[wp];
                 lp = lp * damp + o * (1.0f - damp);
-                buf[wp] = mono + lp * fb;
-                wp = (wp + 1 < len) ? wp + 1 : 0;
+                buf[wp] = scaledMono + lp * combFb;
+                wp = (wp + 1 < kLensL[c]) ? wp + 1 : 0;
                 combSumL += o;
             }
             {
-                float* buf = combBufR + off;
+                float* buf = combBufR + kOffsR[c];
                 int&   wp  = combWpR[c];
                 float& lp  = combLPR[c];
                 const float o = buf[wp];
                 lp = lp * damp + o * (1.0f - damp);
-                buf[wp] = mono + lp * fb;
-                wp = (wp + 1 < len) ? wp + 1 : 0;
+                buf[wp] = scaledMono + lp * combFb;
+                wp = (wp + 1 < kLensR[c]) ? wp + 1 : 0;
                 combSumR += o;
             }
         }
 
-        float ap = (combSumL + combSumR) * 0.25f;
-        ap = allpass(ap, apBuf0, apWp[0], kAP0);
-        ap = allpass(ap, apBuf1, apWp[1], kAP1);
-        float wetL = ap, wetR = ap;
+        // 4 allpass diffusors per channel — separate L/R for true stereo
+        float wetL = allpass(combSumL, apBufL0, apWpL[0], kAPL0);
+        wetL = allpass(wetL, apBufL1, apWpL[1], kAPL1);
+        wetL = allpass(wetL, apBufL2, apWpL[2], kAPL2);
+        wetL = allpass(wetL, apBufL3, apWpL[3], kAPL3);
+
+        float wetR = allpass(combSumR, apBufR0, apWpR[0], kAPR0);
+        wetR = allpass(wetR, apBufR1, apWpR[1], kAPR1);
+        wetR = allpass(wetR, apBufR2, apWpR[2], kAPR2);
+        wetR = allpass(wetR, apBufR3, apWpR[3], kAPR3);
 
         if (fabsf(tone - prevTone) > 0.5f)
             updateToneCache();
@@ -198,10 +219,8 @@ public:
         wetR = cachedLpMix * toneLPR + cachedHpMix * hpR;
 
         // Shimmer — 4-grain granular pitch shift, no transcendentals in inner loop
-        // L grains read at P5-2¢ (1.4998×), R grains at Oct+2¢ (2.0002×)
         if (grainBuf)
         {
-            // Write AA-filtered mono wet to grain buffer
             const float monoWet = (wetL + wetR) * 0.5f;
             grainWriteLP += grainAAAlpha * (monoWet - grainWriteLP);
             grainBuf[grainWritePos] = grainWriteLP;
@@ -214,13 +233,11 @@ public:
 
                 for (int k = 0; k < 4; ++k)
                 {
-                    // Advance grain phases
                     grainPhaseL[k] += kPitchL;
                     if (grainPhaseL[k] >= kGrainBufLen) grainPhaseL[k] -= kGrainBufLen;
                     grainPhaseR[k] += kPitchR;
                     if (grainPhaseR[k] >= kGrainBufLen) grainPhaseR[k] -= kGrainBufLen;
 
-                    // Advance window oscillators: 4 mul + 2 add, no cosf
                     {
                         const float ns = winSinL[k] * winCosIncL + winCosL[k] * winSinIncL;
                         winCosL[k]     = winCosL[k] * winCosIncL - winSinL[k] * winSinIncL;
@@ -232,7 +249,6 @@ public:
                         winSinR[k]     = ns;
                     }
 
-                    // Safety zone: fade grain when read pos approaches write pos
                     const int lagL = (grainWritePos
                                       - static_cast<int>(grainPhaseL[k])
                                       + kGrainBufLen) % kGrainBufLen;
@@ -248,11 +264,9 @@ public:
                         ? static_cast<float>(lagR) / static_cast<float>(grainSafetyZone)
                         : grainSafetyR[k] * grainSafetyCoeff + (1.0f - grainSafetyCoeff);
 
-                    // Hann window from oscillator: 0.5 - 0.5*cos(phase)
                     const float winL = (0.5f - 0.5f * winCosL[k]) * grainSafetyL[k];
                     const float winR = (0.5f - 0.5f * winCosR[k]) * grainSafetyR[k];
 
-                    // Interpolated read
                     {
                         const int   ia = static_cast<int>(grainPhaseL[k]) % kGrainBufLen;
                         const float fr = grainPhaseL[k] - static_cast<float>(static_cast<int>(grainPhaseL[k]));
@@ -271,7 +285,6 @@ public:
                     }
                 }
 
-                // Normalize, apply output LP, add to wet
                 const float shimRawL = (wSumL > 0.001f) ? (accumL / wSumL) * shimmer * 0.45f : 0.0f;
                 const float shimRawR = (wSumR > 0.001f) ? (accumR / wSumR) * shimmer * 0.45f : 0.0f;
                 shimLPL += shimLPAlpha * (shimRawL - shimLPL);
@@ -314,7 +327,6 @@ public:
     }
 
 private:
-    // Shimmer pitch ratios: P5−2¢ on L, Oct+2¢ on R — slight detuning creates slow dreamy beating
     static constexpr float kPitchL = 1.4998f;
     static constexpr float kPitchR = 2.0002f;
 
@@ -338,13 +350,13 @@ private:
         lfoCosInc = cosf(omega);
     }
 
+    // JUCE Reverb allpass: buf[wp] = x + g*buf[wp]; return buf[wp-N] - g*x
     static float allpass(float in, float* buf, int& wp, int len) noexcept
     {
         const float bufOut = buf[wp];
-        const float v      = in + bufOut * (-0.5f);
         buf[wp] = in + bufOut * 0.5f;
         wp = (wp + 1 < len) ? wp + 1 : 0;
-        return v;
+        return bufOut - 0.5f * in;
     }
 
     float sr = 48000.0f;
@@ -364,11 +376,14 @@ private:
     float cachedLpA   = 0.0f, cachedHpA   = 0.0f;
     float cachedLpMix = 0.0f, cachedHpMix = 1.0f;
 
-    int   combWpL[4] = {}, combWpR[4] = {};
-    float combLPL[4] = {}, combLPR[4] = {};
-    int   apWp[2] = {};
-    float apBuf0[kAP0] = {};
-    float apBuf1[kAP1] = {};
+    int   combWpL[8] = {}, combWpR[8] = {};
+    float combLPL[8] = {}, combLPR[8] = {};
+    int   apWpL[4] = {}, apWpR[4] = {};
+
+    // Allpass delay buffers — separate L/R, sized exactly to their lengths (SRAM)
+    float apBufL0[kAPL0] = {}, apBufL1[kAPL1] = {}, apBufL2[kAPL2] = {}, apBufL3[kAPL3] = {};
+    float apBufR0[kAPR0] = {}, apBufR1[kAPR1] = {}, apBufR2[kAPR2] = {}, apBufR3[kAPR3] = {};
+
     int   chorusWritePos = 0;
     float toneLPL = 0.0f, toneLPR = 0.0f;
     float toneHPxL = 0.0f, toneHPyL = 0.0f;
@@ -377,10 +392,10 @@ private:
     // Shimmer grain state
     int   grainWritePos = 0;
     float grainWriteLP  = 0.0f;
-    float grainAAAlpha  = 0.0f;   // 10kHz AA LP on writes
-    float shimLPAlpha   = 0.0f;   // 4kHz LP on shimmer output
+    float grainAAAlpha  = 0.0f;
+    float shimLPAlpha   = 0.0f;
     float shimLPL = 0.0f, shimLPR = 0.0f;
-    int   grainSafetyZone  = 240; // 5ms at 48kHz
+    int   grainSafetyZone  = 240;
     float grainSafetyCoeff = 0.998f;
 
     float grainPhaseL[4] = {};
@@ -388,7 +403,6 @@ private:
     float grainSafetyL[4] = { 1,1,1,1 };
     float grainSafetyR[4] = { 1,1,1,1 };
 
-    // Window quadrature oscillators — one per grain per side, no cosf in inner loop
     float winSinL[4] = {}, winCosL[4] = { 1,0,-1,0 };
     float winSinR[4] = {}, winCosR[4] = { 1,0,-1,0 };
     float winSinIncL = 0.0f, winCosIncL = 1.0f;

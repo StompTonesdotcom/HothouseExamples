@@ -39,8 +39,8 @@ using clevelandmusicco::Hothouse;
 // SDRAM buffers — large allocations live outside the main 512KB SRAM
 // ---------------------------------------------------------------------------
 float DSY_SDRAM_BSS er2_buf       [EarlyReflections2::kBufMax];
-float DSY_SDRAM_BSS comet_combL   [CometTail::kCombTotal];
-float DSY_SDRAM_BSS comet_combR   [CometTail::kCombTotal];
+float DSY_SDRAM_BSS comet_combL   [CometTail::kCombBufMax];
+float DSY_SDRAM_BSS comet_combR   [CometTail::kCombBufMax];
 float DSY_SDRAM_BSS comet_cL      [CometTail::kChorusLen];
 float DSY_SDRAM_BSS comet_cR      [CometTail::kChorusLen];
 float DSY_SDRAM_BSS comet_grainBuf[CometTail::kGrainBufLen]; // shimmer
@@ -78,10 +78,9 @@ static constexpr float kSmooth = 0.05f;
 // Moonn Silver output trim — hardware-confirmed at 0.35f for unity gain
 static constexpr float kSilverTrim = 0.35f;
 
-// CometTail output trim — Schroeder combs at noon sustain (~fb=0.68) amplify
-// the reverb to ~2x dry level before mix. Bring it in line with KidAmnesia/LovelessReverb.
-// Tune on hardware: increase if CometTail sounds too quiet, decrease if still too loud.
-static constexpr float kCometTrim = 0.5f;
+// CometTail output trim — Freeverb fixedGain (0.015) provides natural normalization;
+// 1.0 = no trim needed. Tune on hardware: decrease if reverb tail is too loud vs dry.
+static constexpr float kCometTrim = 1.0f;
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -137,7 +136,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
         loveless.bloom    = Map(sk1, 0.1f, 3.0f);
         loveless.sway     = sk2;
         loveless.wash     = Map(sk3, 200.0f, 20000.0f);
-        loveless.mix      = sk4;
+        // Reach 100% wet at ~90% of knob travel so the physical pot can
+        // actually zero out the dry signal (pot rarely reaches true 1.0).
+        loveless.mix      = sk4 < 0.9f ? sk4 / 0.9f : 1.0f;
         loveless.predelay = Map(sk5, 0.0f, 200.0f);
     }
 
