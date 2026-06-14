@@ -57,10 +57,12 @@ public:
     static constexpr int kAPTotalL = 605+480+371+245; // 1701
     static constexpr int kAPTotalR = 628+503+394+268; // 1793
 
-    // Wet-signal calibration trim. The Schroeder comb network naturally
-    // accumulates energy above unity. 0.85 is the hardware starting point —
-    // increase if the reverb still sounds too quiet, decrease if it clips.
-    static constexpr float kWetTrim = 0.85f;
+    // Wet-signal calibration trim. Matches the JUCE Loveless plugin's explicit
+    // wetScale = 0.6f constant applied after the bloom envelope + wash LP.
+    // Both the JUCE juce::dsp::Reverb and this raw Freeverb implementation use
+    // fixedGain = 0.015f input scaling, so their output levels are equivalent
+    // and 0.6f is the correct trim to match the plugin's wet/dry balance.
+    static constexpr float kWetTrim = 0.6f;
 
     // ── Init ────────────────────────────────────────────────────────────────
     void Init(float sampleRate,

@@ -1,6 +1,7 @@
 // Faze 9 — MXR Phase 90 / M101 phaser model
 // Ported from Faze-9 JUCE plugin (StompTones).
-// Fixed at 11 o'clock position: speed param ≈ 0.40 normalized.
+// Fixed at noon position: speed param = 0.50 normalized (JUCE plugin default).
+// Log rate: kMin × (kMax/kMin)^0.5 = 0.10 × (4.8/0.10)^0.5 ≈ 0.69 Hz
 // 4 all-pass stages with R28 feedback (M101 block-logo topology).
 
 #pragma once
@@ -12,11 +13,10 @@ public:
     void Init(float sampleRate) noexcept
     {
         sr = sampleRate;
-        // 11 o'clock = ~0.40 normalized on a 0-1 knob
-        // Log rate: kMin × (kMax/kMin)^speed = 0.10 × (4.8/0.10)^0.40 ≈ 0.67 Hz
+        // Noon (0.50) = JUCE Faze-9 plugin default speed
         constexpr float kMinHz = 0.10f;
         constexpr float kMaxHz = 4.80f;
-        lfoFreq = kMinHz * std::pow(kMaxHz / kMinHz, 0.40f);
+        lfoFreq = kMinHz * std::pow(kMaxHz / kMinHz, 0.50f);
         lfoPhase = 0.0f;
         feedbackL = feedbackR = 0.0f;
         for (int i = 0; i < 4; ++i)

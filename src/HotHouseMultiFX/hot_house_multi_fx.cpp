@@ -1,28 +1,24 @@
 /*
   Hot House Multi-FX  —  StompTones  —  stomptones.com
 
-  Signal chain:
-    IN → [Toggle1: ER2 / Off / Mini Me] → [FS1: Distortion (Toggle2)] → [FS2: Main effect (Toggle3)] → OUT
+  Signal chain (Toggle 3 controls order):
+    T3 UP/MID: IN → [FS1: Toggle1 effect] → [FS2: Toggle2 effect] → K1 vol → OUT
+    T3 DOWN:   IN → [FS2: Toggle2 effect] → [FS1: Toggle1 effect] → K1 vol → OUT
 
-  Toggle 1 — pre-distortion (no footswitch):
-    UP   = Early Reflections 2 (fixed: reverse, room=20, live=10, 75ms pre-delay, 100% wet)
-    MID  = Off
-    DOWN = Mini Me Chorus (fixed default settings)
+  Toggle 1 (FS1 on/off, LED1) — fixed settings, no knob controls:
+    UP   = Early Reflections 2 (reverse, room=20, predelay=75ms, 100% wet)
+    MID  = Mini Me Chorus (default settings)
+    DOWN = Faze 9 (fixed noon speed ~0.69 Hz)
 
-  FS1 + Toggle 2 — Distortion (LED1):
-    UP   = Moonn Silver   (fixed, unity gain)
-    MID  = Boris Fuzz v2  (fixed max sustain, noon tone, unity gain)
-    DOWN = ST-9           (fixed noon settings, unity gain)
+  Toggle 2 (FS2 on/off, LED2) — K2–K6 control parameters:
+    UP   = Loveless Reverse Reverb (K2=bloom K3=sway K4=wash K5=mix K6=predelay)
+    MID  = Comet Tail / shimmer off (K2=sustain K3=decay K4=texture K5=tone K6=mix)
+    DOWN = Kid Amnesia (K2=delay K3=feedback K4=blend K5=chrvib K6=depth)
 
-  FS2 + Toggle 3 — Main effect (LED2):
-    UP   = Comet Tail   (K1=sustain K2=decay K3=texture K4=tone K5=mix)
-    MID  = Kid Amnesia  (K1=delay K2=feedback K3=blend K4=chrvib K5=depth)
-    DOWN = Void Dweller (K1=drag K2=diffuse K3=reflect K4=dampen K5=mix)
+  K1 = Global output volume (all positions)
 
-  K6 — Global output volume (all toggle/FS positions)
-
-  DFU entry: hold BOTH footswitches simultaneously for 2s  (standard)
-             OR hold FS2 alone for 4s  (single-footswitch alternative)
+  DFU entry: hold BOTH footswitches simultaneously for 2s
+             OR hold FS2 alone for 4s
 */
 
 #include "daisysp.h"
@@ -30,12 +26,10 @@
 
 #include "effects/early_reflections2.h"
 #include "effects/mini_me_chorus.h"
-#include "effects/moonn_silver.h"
-#include "effects/boris_fuzz.h"
-#include "effects/st9.h"
+#include "effects/faze9.h"
+#include "effects/loveless_reverb.h"
 #include "effects/comet_tail.h"
 #include "effects/kid_amnesia.h"
-#include "effects/void_dweller.h"
 
 using namespace daisysp;
 using clevelandmusicco::Hothouse;
@@ -43,14 +37,21 @@ using clevelandmusicco::Hothouse;
 // ============================================================================
 // SDRAM buffers
 // ============================================================================
-float DSY_SDRAM_BSS er2_buf       [EarlyReflections2::kBufMax];
-float DSY_SDRAM_BSS comet_combL   [CometTail::kCombBufMax];
-float DSY_SDRAM_BSS comet_combR   [CometTail::kCombBufMax];
-float DSY_SDRAM_BSS comet_cL      [CometTail::kChorusLen];
-float DSY_SDRAM_BSS comet_cR      [CometTail::kChorusLen];
-float DSY_SDRAM_BSS amnesia_buf   [KidAmnesia::kMaxDelaySamples];
-float DSY_SDRAM_BSS vd_bufL       [VoidDweller::kBufLen];
-float DSY_SDRAM_BSS vd_bufR       [VoidDweller::kBufLen];
+float DSY_SDRAM_BSS er2_buf            [EarlyReflections2::kBufMax];
+
+float DSY_SDRAM_BSS loveless_combL     [LovelessReverb::kCombTotalL];
+float DSY_SDRAM_BSS loveless_combR     [LovelessReverb::kCombTotalR];
+float DSY_SDRAM_BSS loveless_apL       [LovelessReverb::kAPTotalL];
+float DSY_SDRAM_BSS loveless_apR       [LovelessReverb::kAPTotalR];
+float DSY_SDRAM_BSS loveless_swayL     [LovelessReverb::kSwayLen];
+float DSY_SDRAM_BSS loveless_swayR     [LovelessReverb::kSwayLen];
+
+float DSY_SDRAM_BSS comet_combL        [CometTail::kCombBufMax];
+float DSY_SDRAM_BSS comet_combR        [CometTail::kCombBufMax];
+float DSY_SDRAM_BSS comet_cL           [CometTail::kChorusLen];
+float DSY_SDRAM_BSS comet_cR           [CometTail::kChorusLen];
+
+float DSY_SDRAM_BSS amnesia_buf        [KidAmnesia::kMaxDelaySamples];
 
 // ============================================================================
 // Hardware + effects
@@ -59,20 +60,17 @@ Hothouse hw;
 
 EarlyReflections2 er2;
 MiniMeChorus      miniMe;
+Faze9             faze9;
 
-MoonnSilver moonnSilver;
-BorisFuzz   borisFuzz;
-ST9         st9;
-
-CometTail   cometTail;
-KidAmnesia  kidAmnesia;
-VoidDweller voidDweller;
+LovelessReverb loveless;
+CometTail      cometTail;
+KidAmnesia     kidAmnesia;
 
 // ============================================================================
 // State
 // ============================================================================
-bool distortionOn = false;
-bool mainEffectOn = false;
+bool effect1On = false; // FS1 / Toggle 1 effects
+bool effect2On = false; // FS2 / Toggle 2 effects
 
 // ============================================================================
 // Helpers
@@ -100,47 +98,55 @@ void AudioCallback(AudioHandle::InputBuffer in,
 {
     hw.ProcessAllControls();
 
-    if (hw.switches[6].RisingEdge()) distortionOn = !distortionOn;
-    if (hw.switches[7].RisingEdge()) mainEffectOn = !mainEffectOn;
+    if (hw.switches[6].RisingEdge()) effect1On = !effect1On;
+    if (hw.switches[7].RisingEdge()) effect2On = !effect2On;
 
     const auto t1 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_1);
     const auto t2 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_2);
     const auto t3 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_3);
 
+    // Toggle 3 DOWN = reversed chain; UP and MID both = normal order
+    const bool chainReversed = (t3 == Hothouse::TOGGLESWITCH_DOWN);
+
     UpdateKnobs();
-    const float k1=smoothedKnob[0], k2=smoothedKnob[1], k3=smoothedKnob[2];
-    const float k4=smoothedKnob[3], k5=smoothedKnob[4], k6=smoothedKnob[5];
+    const float k1 = smoothedKnob[0]; // global volume
+    const float k2 = smoothedKnob[1];
+    const float k3 = smoothedKnob[2];
+    const float k4 = smoothedKnob[3];
+    const float k5 = smoothedKnob[4];
+    const float k6 = smoothedKnob[5];
 
-    // K6 = global output volume (0–1, applied to all output)
-    const float globalVolume = k6;
-
-    if (t3 == Hothouse::TOGGLESWITCH_UP)
+    // Update Toggle 2 effect parameters (K2–K6)
+    if (t2 == Hothouse::TOGGLESWITCH_UP)
     {
-        // Comet Tail — shimmer removed, 5 knobs: K6 is global volume
-        cometTail.sustain = k1;
-        cometTail.decay   = Map(k2, 0.5f, 10.0f);
-        cometTail.texture = k3;
-        cometTail.mix     = k4 * 0.85f;  // cap at 85% wet — always some dry signal
-        cometTail.tone    = Map(k5, 0.0f, 100.0f);
+        // Loveless Reverse Reverb
+        // K2=bloom(0.1–3s) K3=sway(0–1) K4=wash(200–20kHz) K5=mix K6=predelay(0–200ms)
+        loveless.bloom    = Map(k2, 0.1f, 3.0f);
+        loveless.sway     = k3;
+        loveless.wash     = Map(k4, 200.0f, 20000.0f);
+        loveless.mix      = k5 * 0.85f;  // cap 85% — always some dry signal
+        loveless.predelay = k6 * 200.0f;
     }
-    else if (t3 == Hothouse::TOGGLESWITCH_MIDDLE)
+    else if (t2 == Hothouse::TOGGLESWITCH_MIDDLE)
     {
-        // Kid Amnesia — 5 knobs: K6 is global volume
-        kidAmnesia.delay    = Map(k1, 20.0f, 550.0f);
-        kidAmnesia.feedback = Map(k2, 0.0f, 1.05f);
-        kidAmnesia.blend    = k3;
-        kidAmnesia.chrvib   = k4;
-        kidAmnesia.depth    = k5;
+        // Comet Tail — shimmer fixed at 0 (5 knobs)
+        // K2=sustain(0–1) K3=decay(0.5–10s) K4=texture(0–1) K5=tone(0–100) K6=mix
+        cometTail.shimmer = 0.0f;
+        cometTail.sustain = k2;
+        cometTail.decay   = Map(k3, 0.5f, 10.0f);
+        cometTail.texture = k4;
+        cometTail.tone    = Map(k5, 0.0f, 100.0f);
+        cometTail.mix     = k6 * 0.85f;  // cap 85%
     }
     else
     {
-        // Void Dweller — 5 knobs: length fixed at 0.5 (1s decay), K6 is global volume
-        voidDweller.drag    = 10.0f + 190.0f * k1 * k1;           // plugin skew 0.5 → ^2
-        voidDweller.diffuse = k2;
-        voidDweller.reflect = Map(k3, 0.0f, 0.95f);
-        voidDweller.dampen  = 300.0f + 7700.0f * k4 * k4 * sqrtf(k4); // plugin skew 0.4 → ^2.5
-        voidDweller.mix     = k5 * 0.85f; // cap at 85% wet
-        voidDweller.length  = 0.5f; // fixed — K6 is global volume
+        // Kid Amnesia — matches JUCE Amnesia plugin parameter ranges
+        // K2=delay(20–550ms) K3=feedback(0–1.05) K4=blend(0–1) K5=chrvib(0–1) K6=depth(0–1)
+        kidAmnesia.delay    = Map(k2, 20.0f, 550.0f);
+        kidAmnesia.feedback = Map(k3, 0.0f, 1.05f);
+        kidAmnesia.blend    = k4;
+        kidAmnesia.chrvib   = k5;
+        kidAmnesia.depth    = k6;
     }
 
     for (size_t i = 0; i < size; i++)
@@ -148,55 +154,56 @@ void AudioCallback(AudioHandle::InputBuffer in,
         float sigL = in[0][i];
         float sigR = in[1][i];
 
-        // Stage 1: Pre-distortion (Toggle 1, always in chain)
-        if (t1 == Hothouse::TOGGLESWITCH_UP)
-        {
-            float erL, erR;
-            er2.Process(sigL, sigR, erL, erR);
-            sigL = erL; sigR = erR;
-        }
-        else if (t1 == Hothouse::TOGGLESWITCH_DOWN)
-        {
-            float cL, cR;
-            miniMe.Process(sigL, sigR, cL, cR);
-            sigL = cL; sigR = cR;
-        }
+        // Toggle 1 effect block (applied when FS1 is on)
+        auto applyToggle1 = [&]() {
+            if (!effect1On) return;
+            if (t1 == Hothouse::TOGGLESWITCH_UP)
+            {
+                float eL, eR;
+                er2.Process(sigL, sigR, eL, eR);
+                sigL = eL; sigR = eR;
+            }
+            else if (t1 == Hothouse::TOGGLESWITCH_MIDDLE)
+            {
+                float eL, eR;
+                miniMe.Process(sigL, sigR, eL, eR);
+                sigL = eL; sigR = eR;
+            }
+            else
+            {
+                float eL, eR;
+                faze9.Process(sigL, sigR, eL, eR);
+                sigL = eL; sigR = eR;
+            }
+        };
 
-        // Stage 2: Distortion (FS1)
-        if (distortionOn)
-        {
+        // Toggle 2 effect block (applied when FS2 is on)
+        auto applyToggle2 = [&]() {
+            if (!effect2On) return;
+            float eL, eR;
             if (t2 == Hothouse::TOGGLESWITCH_UP)
-            {
-                moonnSilver.Process(sigL, sigR, sigL, sigR);
-            }
+                loveless.Process(sigL, sigR, eL, eR);
             else if (t2 == Hothouse::TOGGLESWITCH_MIDDLE)
-            {
-                sigL = borisFuzz.Process(sigL, 0);
-                sigR = borisFuzz.Process(sigR, 1);
-            }
+                cometTail.Process(sigL, sigR, eL, eR);
             else
-            {
-                sigL = st9.Process(sigL, 0);
-                sigR = st9.Process(sigR, 1);
-            }
-        }
+                kidAmnesia.Process(sigL, sigR, eL, eR);
+            sigL = eL; sigR = eR;
+        };
 
-        // Stage 3: Main effect (FS2)
-        if (mainEffectOn)
+        if (!chainReversed)
         {
-            float efL, efR;
-            if (t3 == Hothouse::TOGGLESWITCH_UP)
-                cometTail.Process(sigL, sigR, efL, efR);
-            else if (t3 == Hothouse::TOGGLESWITCH_MIDDLE)
-                kidAmnesia.Process(sigL, sigR, efL, efR);
-            else
-                voidDweller.Process(sigL, sigR, efL, efR);
-            sigL = efL; sigR = efR;
+            applyToggle1();
+            applyToggle2();
+        }
+        else
+        {
+            applyToggle2();
+            applyToggle1();
         }
 
-        // K6 global output volume — NaN guard prevents hard fault if any effect blows up
-        const float outL = sigL * globalVolume;
-        const float outR = sigR * globalVolume;
+        // K1 global output volume — NaN guard prevents hard fault from effect blow-up
+        const float outL = sigL * k1;
+        const float outR = sigR * k1;
         out[0][i] = std::isfinite(outL) ? outL : 0.0f;
         out[1][i] = std::isfinite(outR) ? outR : 0.0f;
     }
@@ -218,25 +225,26 @@ int main()
 
     er2.Init(sr, er2_buf);
     miniMe.Init(sr);
-    moonnSilver.Init(sr);
-    borisFuzz.Init(sr);
-    st9.Init(sr);
+    faze9.Init(sr);
+    loveless.Init(sr,
+                  loveless_combL, loveless_combR,
+                  loveless_apL,   loveless_apR,
+                  loveless_swayL, loveless_swayR);
     cometTail.Init(sr, comet_combL, comet_combR, comet_cL, comet_cR);
     kidAmnesia.Init(sr, amnesia_buf);
-    voidDweller.Init(sr, vd_bufL, vd_bufR);
 
     hw.StartAdc();
     hw.StartAudio(AudioCallback);
 
-    uint32_t bothHoldMs = 0; // dual-footswitch DFU timer
-    uint32_t fs2HoldMs  = 0; // single-footswitch DFU timer
+    uint32_t bothHoldMs = 0;
+    uint32_t fs2HoldMs  = 0;
 
     while (true)
     {
         hw.DelayMs(6);
 
-        led1.Set(distortionOn ? 1.0f : 0.0f);
-        led2.Set(mainEffectOn ? 1.0f : 0.0f);
+        led1.Set(effect1On ? 1.0f : 0.0f);
+        led2.Set(effect2On ? 1.0f : 0.0f);
         led1.Update();
         led2.Update();
 
@@ -254,7 +262,6 @@ int main()
         }
         else if (fs2 && !fs1)
         {
-            // FS2 alone for 4s — single-footswitch alternative
             fs2HoldMs += 6;
             bothHoldMs = 0;
             if (fs2HoldMs >= 4000)

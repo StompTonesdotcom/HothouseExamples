@@ -78,10 +78,11 @@ public:
 
         updateBBD(delay);
 
-        // Smooth delay (first-order ramp, ~50ms TC)
+        // Smooth delay — prevents clicks when knob is turned.
+        // smoothDelay tracks in samples; read() uses it instead of raw delay.
         const float target = fmaxf(20.0f * sr / 1000.0f,
                                    fminf(550.0f * sr / 1000.0f, delay * sr / 1000.0f));
-        smoothDelay += 0.00208f * (target - smoothDelay); // ≈ 1/(0.050×48kHz/4samples)
+        smoothDelay += 0.00208f * (target - smoothDelay);
 
         // LFO — quadrature oscillator (no sin/cos per sample)
         // Increments recomputed only when chrvib knob changes
@@ -97,9 +98,11 @@ public:
         lfoCos = lfoCos * lfoCosInc - lfoSin * lfoSinInc;
         lfoSin = ns;
 
-        const float modMs   = lfoSin * depth * 5.0f;
-        const float delayMs = fmaxf(20.0f, fminf(550.0f, delay + modMs));
-        const float delaySamples = delayMs * sr / 1000.0f;
+        // Add LFO modulation (±5ms) to the smoothed delay position
+        const float modSamples = lfoSin * depth * 5.0f * sr / 1000.0f;
+        const float delaySamples = fmaxf(20.0f * sr / 1000.0f,
+                                         fminf(550.0f * sr / 1000.0f,
+                                               smoothDelay + modSamples));
 
         // Mono sum (DMM is a mono pedal)
         const float monoIn = (inL + inR) * 0.5f;

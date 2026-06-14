@@ -157,8 +157,11 @@ public:
         const float maxRoomSize = 0.72f + (decay - 0.5f) / 9.5f * 0.27f;
         const float roomSize    = fminf(0.99f, 0.50f + sustain * (maxRoomSize - 0.50f));
         const float combFb      = roomSize * 0.28f + 0.70f;
-        // Freeverb damping: lp = out*(1-damp) + lp*damp → ~8kHz LP at damp=0.35
-        static constexpr float damp = 0.35f;
+        // Freeverb damping: juce::Reverb applies dampScaleFactor=0.4 to the user
+        // parameter before using it as the LP coefficient (confirmed in juce_Reverb.h).
+        // CometTail sets reverbParams.damping=0.35, so actual LP coefficient = 0.35*0.4 = 0.14.
+        // Using 0.35 directly (old value) produced a reverb ~2.5x more muffled than the plugin.
+        static constexpr float damp = 0.14f;
 
         // Freeverb fixedGain: prevents comb build-up from clipping at max feedback
         const float scaledMono = (inL + inR) * 0.5f * 0.015f;
@@ -350,13 +353,15 @@ private:
         lfoCosInc = cosf(omega);
     }
 
-    // JUCE Reverb allpass: buf[wp] = x + g*buf[wp]; return buf[wp-N] - g*x
+    // JUCE Reverb allpass (confirmed in juce_Reverb.h line 299-306):
+    //   buf[wp] = input + buf[wp] * 0.5f;  return buf[wp-N] - input
+    // The 0.5 factor is only in the write; the return value is bufOut - input (no scaling).
     static float allpass(float in, float* buf, int& wp, int len) noexcept
     {
         const float bufOut = buf[wp];
         buf[wp] = in + bufOut * 0.5f;
         wp = (wp + 1 < len) ? wp + 1 : 0;
-        return bufOut - 0.5f * in;
+        return bufOut - in;
     }
 
     float sr = 48000.0f;

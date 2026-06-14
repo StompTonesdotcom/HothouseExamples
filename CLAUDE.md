@@ -99,24 +99,32 @@ To create a new effect, copy an existing example dir and modify. The `Makefile` 
 
 ### HotHouseMultiFX (`src/HotHouseMultiFX/`)
 
-StompTones multi-FX pedal — 8 effects ported from JUCE plugins. Uses `APP_TYPE = BOOT_QSPI` (code in 8MB QSPI flash, not 128KB internal flash).
+StompTones multi-FX pedal — 6 effects ported from JUCE plugins. Uses `APP_TYPE = BOOT_QSPI` (code in 8MB QSPI flash, not 128KB internal flash).
 
-**Signal chain:** Toggle1 (pre-dist) → FS1 Distortion (Toggle2) → FS2 Main effect (Toggle3)
+**Signal chain:** Toggle 3 controls chain order:
+- T3 UP/MID: FS1(Toggle1 effect) → FS2(Toggle2 effect)
+- T3 DOWN: FS2(Toggle2 effect) → FS1(Toggle1 effect)  ← reversed
 
 | Control | Function |
 |---|---|
-| Toggle 1 UP | Early Reflections 2 (fixed: reverse, room=20, live=10, 75ms pre-delay) |
-| Toggle 1 MID | Off |
-| Toggle 1 DOWN | Mini Me Chorus (fixed default settings) |
-| FS1 + LED1 | Distortion on/off |
-| Toggle 2 UP/MID/DOWN | Moonn Silver / Boris Fuzz v2 / ST-9 (all fixed, unity gain) |
-| FS2 + LED2 | Main effect on/off |
-| Toggle 3 UP | Comet Tail — K1=sustain K2=decay K3=texture K4=mix K5=tone |
-| Toggle 3 MID | Kid Amnesia — K1=delay K2=feedback K3=blend K4=chrvib K5=depth |
-| Toggle 3 DOWN | Void Dweller — K1=drag K2=diffuse K3=reflect K4=dampen K5=mix (length fixed 0.5) |
-| K6 (all positions) | Global output volume (0=silence → 1=unity) |
+| Toggle 1 UP | Early Reflections 2 (fixed: reverse, room=20, 75ms predelay, 100% wet) |
+| Toggle 1 MID | Mini Me Chorus (fixed default settings) |
+| Toggle 1 DOWN | Faze 9 (fixed: 11 o'clock speed) |
+| FS1 + LED1 | Toggle 1 effect on/off |
+| K1 (all positions) | Global output volume (0=silence → 1=unity) |
+| Toggle 2 UP | Loveless Reverse Reverb — K2=bloom K3=sway K4=wash K5=mix K6=predelay |
+| Toggle 2 MID | Comet Tail / shimmer=0 — K2=sustain K3=decay K4=texture K5=tone K6=mix |
+| Toggle 2 DOWN | Kid Amnesia — K2=delay K3=feedback K4=blend K5=chrvib K6=depth |
+| FS2 + LED2 | Toggle 2 effect on/off |
+| Toggle 3 UP/MID | Normal chain order: T1 → T2 (T3 UP position is physically broken; MID covers it) |
+| Toggle 3 DOWN | Reversed chain order: T2 → T1 |
 
-**Memory:** 149KB QSPI / 69KB SRAM / 1.6MB SDRAM
+**Knob parameter ranges (Toggle 2 effects, match JUCE plugin parameter ranges):**
+- Loveless: bloom 0.1–3.0s · sway 0–1 · wash 200–20kHz (linear, noon=10.1kHz) · mix 0–0.85 · predelay 0–200ms
+- CometTail: sustain 0–1 · decay 0.5–10s · texture 0–1 · tone 0–100 (noon=50=neutral) · mix 0–0.85
+- KidAmnesia: delay 20–550ms · feedback 0–1.05 · blend 0–1 · chrvib 0–1 · depth 0–1
+
+**Memory:** 160KB QSPI / 80KB SRAM / 971KB SDRAM
 
 **Flashing:** Requires the Electrosmith Daisy bootloader on the Seed (NOT raw DFU to internal flash). The `APP_TYPE = BOOT_QSPI` Makefile flag selects the QSPI linker script.
 
@@ -169,6 +177,25 @@ out[1][i] = std::isfinite(outR) ? outR : 0.0f;
 
 **Complex transistor circuit models can produce NaN without an obvious single-point cause.** BorisFuzz v2 (a full nodal-analysis BJT model with bilinear-transform tone stack, 8 biquads, and 4 rail saturation stages) produced silence on hardware despite all individual stages appearing numerically stable in analysis. After exhausting code inspection, replaced Process() internals with a simple 3-stage soft-clip fuzz using the same filter coefficients. This produced correct output immediately. Lesson: full circuit simulation models are fragile to port — they can look correct on paper but diverge in 32-bit float on real hardware. Start simple, add complexity only if the simpler version sounds wrong.
 
-**Long delay times make effects sound indistinguishable at first listen.** KidAmnesia at K1=noon with a 285ms delay sounds like a washy reverb until enough echoes accumulate (~500ms). Users perceived it as identical to CometTail (a reverb). Fix: shorten the delay range so noon = ~185ms — the echo is immediately obvious and clearly different from a reverb tail. In general, map knob noon positions to the most musically useful/obvious setting, not the mathematical midpoint of the parameter range.
+**Long delay times make effects sound indistinguishable at first listen.** KidAmnesia at noon (275ms) sounds like a washy reverb until enough echoes accumulate. The full JUCE plugin range (20–550ms, noon=285ms) is used in the current firmware to match the plugin exactly. If this sounds too washed-out on hardware, consider shortening the range so noon ≈ 185ms — the echo is immediately obvious and clearly different from a reverb tail. In general, map knob noon positions to the most musically useful/obvious setting, not the mathematical midpoint of the parameter range.
+
+**Toggle 2 mix is capped at 0.85 (not 1.0).** Loveless and CometTail both apply `mix = k6 * 0.85f`. This means K6 full-clockwise = 85% wet, not 100%. The 15% dry floor prevents the cold-buffer silence issue on power-on. The plugin's 100% wet setting is not accessible from the knob by design. This is a conscious safety trade-off; the noon knob position equals slightly less wet than the plugin's 50% default.
+
+**Faze 9 is fixed at noon speed (0.50 normalized, ~0.69 Hz) — the JUCE plugin default.** No knob control. To adjust: edit `faze9.h` `Init()` directly (speed 0–1 maps logarithmically to 0.10–4.80 Hz via `kMinHz * pow(kMaxHz/kMinHz, speed)`).
+
+**juce::Reverb applies `dampScaleFactor = 0.4f` to the user `damping` parameter before using it as the comb LP coefficient.** Any Freeverb port that uses `reverbParams.damping = X` must apply the LP coefficient as `X * 0.4`, not `X` directly. Confirmed in `juce_Reverb.h` line 216: `const float dampScaleFactor = 0.4f`. CometTail had this bug (0.35f direct → should be 0.14f). Loveless was already correct (`combD = damping * 0.4f` in `_updateParams()`).
+
+**LovelessReverb wet level must match the JUCE plugin's `wetScale = 0.6f`.** The port's `kWetTrim` constant in `loveless_reverb.h` must be `0.6f` (not 0.85f). Both the JUCE `juce::dsp::Reverb` and the port's raw Freeverb use `fixedGain = 0.015f` input scaling so their raw reverb output levels are equivalent — `0.6f` is the correct trim to match the plugin's wet/dry balance at any mix setting. At `0.85f` the reverb is ~42% louder than the plugin.
+
+**Freeverb allpass output formula: `return bufOut - input` (NOT `bufOut - 0.5f*input`).** Confirmed in `juce_Reverb.h` line 306. The 0.5f coefficient belongs only in the write (`buf[wp] = input + buf[wp] * 0.5f`). Using 0.5f in the return value produces different diffusion character. CometTail had this bug and was fixed. LovelessReverb was already correct.
+
+**KidAmnesia delay smoothing: `smoothDelay` must be used in the `read()` call.** The smoother computes `smoothDelay` in samples tracking the `delay` parameter, but the read pointer must use `smoothDelay + modSamples` — not raw `delay`. If the raw delay is passed to `read()`, turning the delay knob jumps the read pointer abruptly, causing audible clicks and pitch glitches. Always verify that smoothed state variables are actually wired into the signal path.
+
+**DSP audit results for current firmware effects (verified against JUCE source):**
+- LovelessReverb: Freeverb algorithm, bloom envelope, sway modulation, wash LP — all match JUCE. kWetTrim confirmed at 0.6f. Allpass `return out - in` confirmed correct.
+- CometTail: Freeverb core, roomSize→combFb formula (exact match to `jmap(decay,0.5,10,0.72,0.99)` + `jmap(sustain,0,1,0.5,maxRoom)`), tone filter LP/HP frequency formulas (exact match), texture chorus LFO rate — all match JUCE. Port uses 1st-order IIR tone filters vs JUCE's 2nd-order SVT (known tradeoff for CPU). Shimmer=0 means grain code completely skipped. **Damping LP coefficient confirmed at 0.14f** (= 0.35 × 0.4 JUCE scale factor). **Allpass fixed: `return bufOut - in`** (was wrong `- 0.5f*in`).
+- KidAmnesia: Equal-power blend formula (1/sqrt((1-b)²+b²)) matches JUCE exactly. BBD cutoff formula 8000×0.4^t matches plugin. **smoothDelay now wired into read()** — was dead code before fix.
+- MiniMe Chorus: Passive resistive mix (27/49 dry + 22/49 wet), LFO formula (0.5×18^rate), depth=1.5ms — all match JUCE.
+- Faze9: Allpass filter formula, feedback routing (R28: stage4→stage2), pole sweep formula, output mix (0.5dry+0.5wet)×sqrt(2) — all match JUCE.
 
 _This section will grow as custom effects are built. Add notes here about design decisions, bugs found, and non-obvious behaviors._
