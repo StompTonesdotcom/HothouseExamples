@@ -140,8 +140,8 @@ public:
         chorusWritePos = 0;
         lfoSin = 0.0f; lfoCos = 1.0f;
         prevTexture = -99.0f;
-        toneLPL = toneLPR = 0.0f;
-        toneHPxL = toneHPyL = toneHPxR = toneHPyR = 0.0f;
+        svfLpS1L = svfLpS2L = svfLpS1R = svfLpS2R = 0.0f;
+        svfHpS1L = svfHpS2L = svfHpS1R = svfHpS2R = 0.0f;
 
         grainWriteLP = 0.0f;
         shimLPL = shimLPR = 0.0f;
@@ -212,14 +212,35 @@ public:
         if (fabsf(tone - prevTone) > 0.5f)
             updateToneCache();
 
-        toneLPL += (1.0f - cachedLpA) * (wetL - toneLPL);
-        toneLPR += (1.0f - cachedLpA) * (wetR - toneLPR);
-        const float hpL = wetL - toneHPxL + cachedHpA * toneHPyL;
-        toneHPxL = wetL; toneHPyL = hpL;
-        const float hpR = wetR - toneHPxR + cachedHpA * toneHPyR;
-        toneHPxR = wetR; toneHPyR = hpR;
-        wetL = cachedLpMix * toneLPL + cachedHpMix * hpL;
-        wetR = cachedLpMix * toneLPR + cachedHpMix * hpR;
+        // Tone: 2nd-order Butterworth TPT SVF (LP and HP in parallel, crossfaded at noon)
+        // Matches juce::dsp::StateVariableTPTFilter used in the plugin.
+        float lpOutL, lpOutR, hpOutL, hpOutR;
+        {
+            const float g = cachedLpG, h = cachedLpH;
+            float yH, yB, yL;
+            yH = h * (wetL - (kSvfK + g) * svfLpS1L - svfLpS2L);
+            yB = g * yH + svfLpS1L; svfLpS1L = g * yH + yB;
+            yL = g * yB + svfLpS2L; svfLpS2L = g * yB + yL;
+            lpOutL = yL;
+            yH = h * (wetR - (kSvfK + g) * svfLpS1R - svfLpS2R);
+            yB = g * yH + svfLpS1R; svfLpS1R = g * yH + yB;
+            yL = g * yB + svfLpS2R; svfLpS2R = g * yB + yL;
+            lpOutR = yL;
+        }
+        {
+            const float g = cachedHpG, h = cachedHpH;
+            float yH, yB, yL;
+            yH = h * (wetL - (kSvfK + g) * svfHpS1L - svfHpS2L);
+            yB = g * yH + svfHpS1L; svfHpS1L = g * yH + yB;
+            yL = g * yB + svfHpS2L; svfHpS2L = g * yB + yL;
+            hpOutL = yH;
+            yH = h * (wetR - (kSvfK + g) * svfHpS1R - svfHpS2R);
+            yB = g * yH + svfHpS1R; svfHpS1R = g * yH + yB;
+            yL = g * yB + svfHpS2R; svfHpS2R = g * yB + yL;
+            hpOutR = yH;
+        }
+        wetL = cachedLpMix * lpOutL + cachedHpMix * hpOutL;
+        wetR = cachedLpMix * lpOutR + cachedHpMix * hpOutR;
 
         // Shimmer — 4-grain granular pitch shift, no transcendentals in inner loop
         if (grainBuf)
@@ -339,8 +360,10 @@ private:
         const float lpFreq = 2000.0f * std::pow(15000.0f / 2000.0f, fminf(tone, 50.0f) / 50.0f);
         const float hpFreq = 80.0f   * std::pow(500.0f   / 80.0f,
                                                  fmaxf(tone - 50.0f, 0.0f) / 50.0f);
-        cachedLpA   = std::exp(-6.28318f * lpFreq / sr);
-        cachedHpA   = std::exp(-6.28318f * hpFreq / sr);
+        cachedLpG = std::tan(3.14159265f * lpFreq / sr);
+        cachedLpH = 1.0f / (1.0f + kSvfK * cachedLpG + cachedLpG * cachedLpG);
+        cachedHpG = std::tan(3.14159265f * hpFreq / sr);
+        cachedHpH = 1.0f / (1.0f + kSvfK * cachedHpG + cachedHpG * cachedHpG);
         cachedLpMix = fmaxf(0.0f, fminf(1.0f, (55.0f - tone) / 10.0f));
         cachedHpMix = 1.0f - cachedLpMix;
     }
@@ -378,7 +401,10 @@ private:
     float prevTexture = -99.0f;
 
     float prevTone    = -999.0f;
-    float cachedLpA   = 0.0f, cachedHpA   = 0.0f;
+    // SVF coefficients (2nd-order Butterworth TPT, precomputed on tone change)
+    static constexpr float kSvfK = 1.41421356f; // sqrt(2), Butterworth Q=1/sqrt(2)
+    float cachedLpG = 0.0f, cachedLpH = 1.0f;
+    float cachedHpG = 0.0f, cachedHpH = 1.0f;
     float cachedLpMix = 0.0f, cachedHpMix = 1.0f;
 
     int   combWpL[8] = {}, combWpR[8] = {};
@@ -390,9 +416,11 @@ private:
     float apBufR0[kAPR0] = {}, apBufR1[kAPR1] = {}, apBufR2[kAPR2] = {}, apBufR3[kAPR3] = {};
 
     int   chorusWritePos = 0;
-    float toneLPL = 0.0f, toneLPR = 0.0f;
-    float toneHPxL = 0.0f, toneHPyL = 0.0f;
-    float toneHPxR = 0.0f, toneHPyR = 0.0f;
+    // SVF integrator states: 2 per filter per channel
+    float svfLpS1L = 0.0f, svfLpS2L = 0.0f;
+    float svfLpS1R = 0.0f, svfLpS2R = 0.0f;
+    float svfHpS1L = 0.0f, svfHpS2L = 0.0f;
+    float svfHpS1R = 0.0f, svfHpS2R = 0.0f;
 
     // Shimmer grain state
     int   grainWritePos = 0;

@@ -72,6 +72,10 @@ KidAmnesia     kidAmnesia;
 bool effect1On = false; // FS1 / Toggle 1 effects
 bool effect2On = false; // FS2 / Toggle 2 effects
 
+float eff2FadeGain   = 1.0f;
+int   eff2FadeRemain = 0;
+static constexpr int kFadeSamples = 14400; // 300ms @ 48kHz
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -99,7 +103,10 @@ void AudioCallback(AudioHandle::InputBuffer in,
     hw.ProcessAllControls();
 
     if (hw.switches[6].RisingEdge()) effect1On = !effect1On;
-    if (hw.switches[7].RisingEdge()) effect2On = !effect2On;
+    if (hw.switches[7].RisingEdge()) {
+        effect2On = !effect2On;
+        if (effect2On) { eff2FadeGain = 0.0f; eff2FadeRemain = kFadeSamples; }
+    }
 
     const auto t1 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_1);
     const auto t2 = hw.GetToggleswitchPosition(Hothouse::TOGGLESWITCH_2);
@@ -124,7 +131,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
         loveless.bloom    = Map(k2, 0.1f, 3.0f);
         loveless.sway     = k3;
         loveless.wash     = Map(k4, 200.0f, 20000.0f);
-        loveless.mix      = k5 * 0.85f;  // cap 85% — always some dry signal
+        loveless.mix      = k5;
         loveless.predelay = k6 * 200.0f;
     }
     else if (t2 == Hothouse::TOGGLESWITCH_MIDDLE)
@@ -136,7 +143,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
         cometTail.decay   = Map(k3, 0.5f, 10.0f);
         cometTail.texture = k4;
         cometTail.tone    = Map(k5, 0.0f, 100.0f);
-        cometTail.mix     = k6 * 0.85f;  // cap 85%
+        cometTail.mix     = k6;
     }
     else
     {
@@ -180,6 +187,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
         // Toggle 2 effect block (applied when FS2 is on)
         auto applyToggle2 = [&]() {
             if (!effect2On) return;
+            const float dryL = sigL, dryR = sigR;
             float eL, eR;
             if (t2 == Hothouse::TOGGLESWITCH_UP)
                 loveless.Process(sigL, sigR, eL, eR);
@@ -187,7 +195,16 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 cometTail.Process(sigL, sigR, eL, eR);
             else
                 kidAmnesia.Process(sigL, sigR, eL, eR);
-            sigL = eL; sigR = eR;
+            if (eff2FadeRemain > 0) {
+                const float g = eff2FadeGain;
+                sigL = dryL * (1.0f - g) + eL * g;
+                sigR = dryR * (1.0f - g) + eR * g;
+                eff2FadeGain += 1.0f / kFadeSamples;
+                if (eff2FadeGain > 1.0f) eff2FadeGain = 1.0f;
+                --eff2FadeRemain;
+            } else {
+                sigL = eL; sigR = eR;
+            }
         };
 
         if (!chainReversed)
